@@ -67,7 +67,7 @@ If you control the server, use the [GCF libraries](https://github.com/blackwell-
 ## Links
 
 - [GCF Specification](https://github.com/blackwell-systems/gcf)
-- [Documentation](https://blackwell-systems.github.io/gcf/)
+- [Documentation](https://gcformat.com/)
 - [Go library](https://github.com/blackwell-systems/gcf-go)
 - [TypeScript library](https://github.com/blackwell-systems/gcf-typescript)
 - [Python library](https://github.com/blackwell-systems/gcf-python)
