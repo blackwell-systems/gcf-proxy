@@ -193,38 +193,47 @@ func tryConvertToGCF(text string) string {
 		return ""
 	}
 
-	// Must have tool and symbols to be a GCF-compatible payload
-	if payload.Tool == "" || payload.Symbols == nil {
+	// Graph profile: payload has tool + symbols
+	if payload.Tool != "" && payload.Symbols != nil {
+		p := &gcf.Payload{
+			Tool:        payload.Tool,
+			TokensUsed:  payload.TokensUsed,
+			TokenBudget: payload.TokenBudget,
+			PackRoot:    payload.PackRoot,
+		}
+
+		for _, s := range payload.Symbols {
+			p.Symbols = append(p.Symbols, gcf.Symbol{
+				QualifiedName: s.QualifiedName,
+				Kind:          s.Kind,
+				Score:         s.Score,
+				Provenance:    s.Provenance,
+				Distance:      s.Distance,
+			})
+		}
+
+		for _, e := range payload.Edges {
+			p.Edges = append(p.Edges, gcf.Edge{
+				Source:   e.Source,
+				Target:   e.Target,
+				EdgeType: e.EdgeType,
+				Status:   e.Status,
+			})
+		}
+
+		return gcf.Encode(p)
+	}
+
+	// Tabular profile: any structured JSON
+	var generic any
+	if err := json.Unmarshal([]byte(trimmed), &generic); err != nil {
 		return ""
 	}
-
-	p := &gcf.Payload{
-		Tool:        payload.Tool,
-		TokensUsed:  payload.TokensUsed,
-		TokenBudget: payload.TokenBudget,
-		PackRoot:    payload.PackRoot,
+	result := gcf.EncodeGeneric(generic)
+	if result == "" {
+		return ""
 	}
-
-	for _, s := range payload.Symbols {
-		p.Symbols = append(p.Symbols, gcf.Symbol{
-			QualifiedName: s.QualifiedName,
-			Kind:          s.Kind,
-			Score:         s.Score,
-			Provenance:    s.Provenance,
-			Distance:      s.Distance,
-		})
-	}
-
-	for _, e := range payload.Edges {
-		p.Edges = append(p.Edges, gcf.Edge{
-			Source:   e.Source,
-			Target:   e.Target,
-			EdgeType: e.EdgeType,
-			Status:   e.Status,
-		})
-	}
-
-	return gcf.Encode(p)
+	return result
 }
 
 func fatal(format string, args ...interface{}) {
