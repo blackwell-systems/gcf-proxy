@@ -1,0 +1,32 @@
+[build-system]
+requires = ["setuptools>=68.0"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "gcf-proxy"
+version = "0.1.0"
+description = "MCP proxy that re-encodes JSON tool responses as GCF. Zero code changes."
+readme = "README.md"
+license = "MIT"
+requires-python = ">=3.8"
+keywords = ["gcf", "mcp", "proxy", "llm", "tokens", "json", "wire-format", "graph-compact-format", "toon-alternative", "agent", "ai"]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Intended Audience :: Developers",
+    "Programming Language :: Python :: 3",
+    "Topic :: Software Development :: Libraries",
+]
+
+[project.urls]
+Homepage = "https://github.com/blackwell-systems/gcf-proxy"
+Documentation = "https://gcformat.com/"
+Repository = "https://github.com/blackwell-systems/gcf-proxy"
+
+[project.scripts]
+gcf-proxy = "gcf_proxy.__main__:main"
+
+[tool.setuptools.packages.find]
+include = ["gcf_proxy*"]
+
+[tool.setuptools.package-data]
+gcf_proxy = ["bin/*"]

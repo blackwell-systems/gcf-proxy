@@ -1,0 +1,103 @@
+name: Release
+
+on:
+  push:
+    tags: ['v*']
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        include:
+          - goos: linux
+            goarch: amd64
+            suffix: linux_amd64
+          - goos: linux
+            goarch: arm64
+            suffix: linux_arm64
+          - goos: darwin
+            goarch: amd64
+            suffix: darwin_amd64
+          - goos: darwin
+            goarch: arm64
+            suffix: darwin_arm64
+          - goos: windows
+            goarch: amd64
+            suffix: windows_amd64
+          - goos: windows
+            goarch: arm64
+            suffix: windows_arm64
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.23'
+      - name: Build
+        env:
+          GOOS: ${{ matrix.goos }}
+          GOARCH: ${{ matrix.goarch }}
+        run: |
+          EXT=""
+          if [ "${{ matrix.goos }}" = "windows" ]; then EXT=".exe"; fi
+          go build -ldflags "-s -w -X main.version=${{ github.ref_name }}" \
+            -o gcf-proxy${EXT} .
+          if [ "${{ matrix.goos }}" = "windows" ]; then
+            zip gcf-proxy-${{ matrix.suffix }}.zip gcf-proxy${EXT}
+          else
+            tar czf gcf-proxy-${{ matrix.suffix }}.tar.gz gcf-proxy${EXT}
+          fi
+      - uses: actions/upload-artifact@v4
+        with:
+          name: gcf-proxy-${{ matrix.suffix }}
+          path: gcf-proxy-${{ matrix.suffix }}.*
+
+  release:
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+          merge-multiple: true
+      - name: Create release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: artifacts/*
+          generate_release_notes: true
+
+  npm-publish:
+    needs: release
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Publish npm packages
+        run: |
+          echo "//registry.npmjs.org/:_authToken=${NPM_TOKEN}" > ~/.npmrc
+          bash scripts/npm-publish.sh "${{ github.ref_name }}"
+        env:
+          NPM_TOKEN: ${{ secrets.NPM_TOKEN }}
+
+  pypi-publish:
+    needs: release
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Install build tools
+        run: pip install wheel setuptools twine
+      - name: Build and publish wheels
+        run: |
+          bash scripts/pypi-build-wheels.sh "${{ github.ref_name }}"
+          twine upload pypi/dist/*.whl
+        env:
+          TWINE_USERNAME: __token__
+          TWINE_PASSWORD: ${{ secrets.PYPI_TOKEN }}

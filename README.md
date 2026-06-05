@@ -12,7 +12,9 @@
 ## Install
 
 ```bash
-go install github.com/blackwell-systems/gcf-proxy@latest
+pip install gcf-proxy                                         # PyPI
+npm install -g @blackwell-systems/gcf-proxy                   # npm
+go install github.com/blackwell-systems/gcf-proxy@latest      # Go
 ```
 
 ## Usage

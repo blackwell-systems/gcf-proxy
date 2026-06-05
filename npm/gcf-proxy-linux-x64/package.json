@@ -1,0 +1,9 @@
+{
+  "name": "@blackwell-systems/gcf-proxy-linux-x64",
+  "version": "0.1.0",
+  "description": "gcf-proxy binary for linux-x64",
+  "os": ["linux"],
+  "cpu": ["x64"],
+  "files": ["bin/"],
+  "license": "MIT"
+}

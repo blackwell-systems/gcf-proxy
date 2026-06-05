@@ -1,0 +1,9 @@
+{
+  "name": "@blackwell-systems/gcf-proxy-win32-x64",
+  "version": "0.1.0",
+  "description": "gcf-proxy binary for win32-x64",
+  "os": ["win32"],
+  "cpu": ["x64"],
+  "files": ["bin/"],
+  "license": "MIT"
+}

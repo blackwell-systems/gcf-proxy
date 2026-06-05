@@ -1,0 +1,9 @@
+{
+  "name": "@blackwell-systems/gcf-proxy-darwin-x64",
+  "version": "0.1.0",
+  "description": "gcf-proxy binary for darwin-x64",
+  "os": ["darwin"],
+  "cpu": ["x64"],
+  "files": ["bin/"],
+  "license": "MIT"
+}
