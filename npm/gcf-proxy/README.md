@@ -9,7 +9,7 @@ Docs: [gcformat.com](https://gcformat.com/) · [Proxy Guide](https://gcformat.co
 ## Install
 
 ```bash
-pip install gcf-proxy
+npm install -g @blackwell-systems/gcf-proxy
 ```
 
 ## Setup (one line change)
@@ -70,7 +70,7 @@ For session deduplication (92.7% savings) and delta encoding (81.2% savings), us
 
 ## Also available on
 
-- npm: `npm install -g @blackwell-systems/gcf-proxy`
+- PyPI: `pip install gcf-proxy`
 - Go: `go install github.com/blackwell-systems/gcf-proxy@latest`
 
 ## Links
