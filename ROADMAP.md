@@ -23,6 +23,20 @@ Without `progressToken`: behaves exactly as before (backward compatible).
 
 ---
 
+## Phase 1.5: Tabular Streaming
+
+The proxy currently streams graph profile responses via `StreamEncoder` but encodes tabular responses in one shot via `EncodeGeneric`. With `GenericStreamEncoder` now available in gcf-go, the proxy can stream large tabular JSON arrays incrementally too.
+
+**Planned:**
+- Incremental JSON array parsing: detect large arrays in tool responses, parse element-by-element
+- Use `GenericStreamEncoder.BeginArray`/`WriteRow` to emit rows as each JSON element is parsed
+- Emit progress notifications with tabular GCF fragments (same mechanism as graph streaming)
+- Threshold-based: only activate for arrays above `--stream-threshold` elements
+
+**Use case:** MCP servers returning large JSON arrays (search results, database queries, log entries). The proxy re-encodes each row as GCF tabular the instant it's parsed from JSON, without buffering the full array.
+
+---
+
 ## Phase 2: HTTP/SSE Frontend
 
 The proxy becomes a Streamable HTTP server. Any stdio-based MCP server gets upgraded to a remote HTTP service with SSE streaming.
