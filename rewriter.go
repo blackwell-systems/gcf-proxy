@@ -55,7 +55,7 @@ func (r *Rewriter) RewriteToolResult(text string, progressFn ProgressFunc) Rewri
 		return result
 	}
 
-	// Fall back to tabular profile (any structured JSON).
+	// Fall back to generic profile (any structured JSON).
 	var generic any
 	if err := json.Unmarshal([]byte(trimmed), &generic); err != nil {
 		return RewriteResult{Original: text}

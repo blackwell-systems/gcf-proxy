@@ -37,7 +37,7 @@ LLM  ←──  GCF  ←──  gcf-proxy  ←──  JSON  ←──  Your Serv
 1. Spawns your MCP server as a subprocess
 2. Proxies stdin/stdout between client and server
 3. Detects JSON payloads in tool responses
-4. Re-encodes as GCF (graph profile for code intelligence, tabular profile for everything else)
+4. Re-encodes as GCF (graph profile for code intelligence, generic profile for everything else)
 5. Non-convertible responses (text, HTML, errors) pass through unchanged
 
 ## Savings
