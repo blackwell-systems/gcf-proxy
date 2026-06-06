@@ -2,7 +2,7 @@
 
 MCP proxy that re-encodes JSON tool responses as [GCF](https://gcformat.com/) — the most token-efficient wire format for LLMs. Drop-in, zero code changes. A TOON/JSON alternative that saves 63-79% of tokens.
 
-**79% fewer tokens than JSON. 34% fewer than TOON. 100% comprehension accuracy (13/13) where JSON scores 76.9% and TOON scores 92.3%.**
+**79% fewer tokens than JSON. 34% fewer than TOON. 90.5% average comprehension accuracy across 10 models and 3 providers. 1,300+ LLM evaluations. Zero training.**
 
 Docs: [gcformat.com](https://gcformat.com/) · [Proxy Guide](https://gcformat.com/guide/proxy.html) · [Playground](https://gcformat.com/playground.html) · [GCF vs TOON](https://gcformat.com/guide/vs-toon.html)
 
@@ -77,9 +77,9 @@ For session deduplication (92.7% savings) and delta encoding (81.2% savings), us
 
 | Format | Accuracy | Tokens | vs JSON |
 |--------|----------|--------|---------|
-| **GCF** | **100%** (13/13) | **11,090** | **79% fewer** |
-| TOON | 92.3% (12/13) | 16,378 | 69% fewer |
-| JSON | 76.9% (10/13) | 53,341 | baseline |
+| **GCF** | **90.5%** avg (10 models) | **11,090** | **79% fewer** |
+| TOON | 68.5% avg | 16,378 | 69% fewer |
+| JSON | 53.6% avg | 53,341 | baseline |
 
 GCF wins all 6 datasets on TOON's own benchmark. 42% smaller on semi-uniform data, 34% on mixed-structure.
 

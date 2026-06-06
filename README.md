@@ -8,7 +8,7 @@
 
 **MCP proxy that re-encodes JSON tool responses as GCF. Drop-in, zero changes to your server.**
 
-79% fewer tokens. 100% comprehension accuracy (13/13). One line change in your MCP config.
+79% fewer tokens. 90.5% comprehension accuracy across 10 models. One line change in your MCP config.
 
 ## Install
 
@@ -73,9 +73,9 @@ GCF achieves 100% comprehension accuracy at 500 symbols where JSON scores 76.9% 
 
 | Format | Accuracy | Tokens | vs JSON |
 |--------|----------|--------|---------|
-| **GCF** | **100%** (13/13) | **11,090** | **79% fewer** |
-| TOON | 92.3% (12/13) | 16,378 | 69% fewer |
-| JSON | 76.9% (10/13) | 53,341 | baseline |
+| **GCF** | **90.5%** avg (10 models) | **11,090** | **79% fewer** |
+| TOON | 68.5% avg | 16,378 | 69% fewer |
+| JSON | 53.6% avg | 53,341 | baseline |
 
 Reproduce comprehension eval: `git clone https://github.com/blackwell-systems/gcf-go && cd gcf-go/eval && GOWORK=off go test -run TestComprehension -v -timeout 0`
 
