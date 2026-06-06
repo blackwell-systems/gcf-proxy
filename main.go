@@ -1,4 +1,4 @@
-// gcf-proxy is a transparent MCP proxy that re-encodes JSON tool responses as GCF.
+// gcf-proxy is a streaming MCP proxy that re-encodes JSON tool responses as GCF.
 //
 // Usage:
 //
@@ -6,6 +6,9 @@
 //
 // It spawns the given MCP server as a subprocess, proxies stdin/stdout,
 // and rewrites JSON content blocks in tool responses to GCF format.
+// When a progressToken is present, it streams GCF fragments via progress
+// notifications for immediate partial context delivery.
+//
 // Zero changes required to the underlying server.
 package main
 
@@ -16,29 +19,39 @@ import (
 	"io"
 	"os"
 	"os/exec"
+	"strconv"
 	"strings"
-
-	gcf "github.com/blackwell-systems/gcf-go"
+	"sync"
 )
 
 var version = "dev"
 
 func main() {
 	if len(os.Args) < 2 || os.Args[1] == "--help" || os.Args[1] == "-h" {
-		fmt.Fprintf(os.Stderr, `gcf-proxy - MCP proxy that re-encodes JSON tool responses as GCF
+		fmt.Fprintf(os.Stderr, `gcf-proxy - streaming MCP proxy that re-encodes JSON tool responses as GCF
 
 Usage:
-  gcf-proxy <mcp-server-command> [args...]
+  gcf-proxy [flags] <mcp-server-command> [args...]
+
+Flags:
+  --stream-threshold N   Min symbols before streaming mode activates (default: 5)
+  --no-progress          Disable progress notifications
 
 Example:
   gcf-proxy memory-mcp-server-go
   gcf-proxy npx -y @modelcontextprotocol/server-filesystem /tmp
+  gcf-proxy --stream-threshold 10 knowing
 
 MCP config (before):
   {"mcpServers": {"memory": {"command": "memory-mcp-server-go"}}}
 
 MCP config (after):
   {"mcpServers": {"memory": {"command": "gcf-proxy", "args": ["memory-mcp-server-go"]}}}
+
+Features:
+  - Re-encodes JSON tool responses as GCF (79%% fewer tokens)
+  - Streams GCF fragments via progress notifications (immediate partial context)
+  - Zero changes to the upstream server
 
 Version: %s
 `, version)
@@ -48,8 +61,38 @@ Version: %s
 		os.Exit(0)
 	}
 
-	serverCmd := os.Args[1]
-	serverArgs := os.Args[2:]
+	// Parse flags.
+	streamThreshold := 5
+	enableProgress := true
+	args := os.Args[1:]
+
+	for len(args) > 0 {
+		switch {
+		case args[0] == "--stream-threshold" && len(args) > 1:
+			if n, err := strconv.Atoi(args[1]); err == nil {
+				streamThreshold = n
+			}
+			args = args[2:]
+		case args[0] == "--no-progress":
+			enableProgress = false
+			args = args[1:]
+		default:
+			goto done
+		}
+	}
+done:
+
+	if len(args) == 0 {
+		fatal("no server command specified")
+	}
+
+	serverCmd := args[0]
+	serverArgs := args[1:]
+
+	rewriter := NewRewriter(RewriterConfig{
+		StreamThreshold: streamThreshold,
+		EnableProgress:  enableProgress,
+	})
 
 	cmd := exec.Command(serverCmd, serverArgs...)
 	cmd.Stderr = os.Stderr
@@ -68,20 +111,39 @@ Version: %s
 		fatal("failed to start server: %v", err)
 	}
 
-	// Proxy client stdin -> server stdin
+	// Output mutex: ensures progress notifications and responses don't interleave.
+	var outputMu sync.Mutex
+
+	// Track active progress tokens from tool call requests.
+	var tokenMu sync.Mutex
+	activeTokens := make(map[string]json.RawMessage) // request ID -> progressToken
+
+	// Proxy client stdin -> server stdin, capturing progress tokens from requests.
 	go func() {
-		io.Copy(serverStdin, os.Stdin)
+		scanner := bufio.NewScanner(os.Stdin)
+		scanner.Buffer(make([]byte, 0, 10*1024*1024), 10*1024*1024)
+		for scanner.Scan() {
+			line := scanner.Text()
+
+			// Try to extract progressToken from tool call requests.
+			extractProgressToken(line, &tokenMu, activeTokens)
+
+			serverStdin.Write([]byte(line))
+			serverStdin.Write([]byte("\n"))
+		}
 		serverStdin.Close()
 	}()
 
-	// Proxy server stdout -> client stdout (with GCF rewriting)
+	// Proxy server stdout -> client stdout (with GCF rewriting + progress).
 	scanner := bufio.NewScanner(serverStdout)
-	scanner.Buffer(make([]byte, 0, 10*1024*1024), 10*1024*1024) // 10MB max line
+	scanner.Buffer(make([]byte, 0, 10*1024*1024), 10*1024*1024)
 
 	for scanner.Scan() {
 		line := scanner.Text()
-		rewritten := rewriteLine(line)
+		rewritten := rewriteResponse(line, rewriter, &outputMu, &tokenMu, activeTokens)
+		outputMu.Lock()
 		fmt.Println(rewritten)
+		outputMu.Unlock()
 	}
 
 	if err := cmd.Wait(); err != nil {
@@ -92,10 +154,40 @@ Version: %s
 	}
 }
 
-// rewriteLine attempts to parse a JSON-RPC response and rewrite tool result
-// content blocks from JSON to GCF.
-func rewriteLine(line string) string {
-	// Quick check: is this even JSON?
+// extractProgressToken looks for tools/call requests and caches their progressToken.
+func extractProgressToken(line string, mu *sync.Mutex, tokens map[string]json.RawMessage) {
+	trimmed := strings.TrimSpace(line)
+	if len(trimmed) == 0 || trimmed[0] != '{' {
+		return
+	}
+
+	var msg struct {
+		ID     json.RawMessage `json:"id"`
+		Method string          `json:"method"`
+		Params struct {
+			Meta struct {
+				ProgressToken json.RawMessage `json:"progressToken"`
+			} `json:"_meta"`
+		} `json:"params"`
+	}
+	if err := json.Unmarshal([]byte(trimmed), &msg); err != nil {
+		return
+	}
+	if msg.Method != "tools/call" || msg.ID == nil {
+		return
+	}
+	if msg.Params.Meta.ProgressToken == nil || string(msg.Params.Meta.ProgressToken) == "null" {
+		return
+	}
+
+	mu.Lock()
+	tokens[string(msg.ID)] = msg.Params.Meta.ProgressToken
+	mu.Unlock()
+}
+
+// rewriteResponse processes a JSON-RPC response line, converting tool result
+// content to GCF and optionally emitting progress notifications.
+func rewriteResponse(line string, rw *Rewriter, outputMu *sync.Mutex, tokenMu *sync.Mutex, tokens map[string]json.RawMessage) string {
 	trimmed := strings.TrimSpace(line)
 	if len(trimmed) == 0 || trimmed[0] != '{' {
 		return line
@@ -106,18 +198,27 @@ func rewriteLine(line string) string {
 		return line
 	}
 
-	// Only process JSON-RPC responses (have "result" field)
+	// Only process JSON-RPC responses (have "result" and "id" fields).
 	resultRaw, hasResult := msg["result"]
-	if !hasResult {
+	idRaw, hasID := msg["id"]
+	if !hasResult || !hasID {
 		return line
 	}
+
+	// Look up progressToken for this response's request ID.
+	var progressToken json.RawMessage
+	tokenMu.Lock()
+	if tok, ok := tokens[string(idRaw)]; ok {
+		progressToken = tok
+		delete(tokens, string(idRaw))
+	}
+	tokenMu.Unlock()
 
 	var result map[string]json.RawMessage
 	if err := json.Unmarshal(resultRaw, &result); err != nil {
 		return line
 	}
 
-	// Look for content array in the result
 	contentRaw, hasContent := result["content"]
 	if !hasContent {
 		return line
@@ -140,10 +241,23 @@ func rewriteLine(line string) string {
 			continue
 		}
 
-		// Try to parse as JSON payload with "tool" and "symbols" fields
-		converted := tryConvertToGCF(text)
-		if converted != "" {
-			content[i]["text"] = converted
+		// Build progressFn if we have a token.
+		var progressFn ProgressFunc
+		if progressToken != nil {
+			progressFn = func(fragment string, progress, total int) {
+				notif, err := makeProgressNotification(progressToken, progress, total, fragment)
+				if err != nil {
+					return
+				}
+				outputMu.Lock()
+				fmt.Println(string(notif))
+				outputMu.Unlock()
+			}
+		}
+
+		res := rw.RewriteToolResult(text, progressFn)
+		if res.Converted {
+			content[i]["text"] = res.Rewritten
 			modified = true
 		}
 	}
@@ -152,7 +266,7 @@ func rewriteLine(line string) string {
 		return line
 	}
 
-	// Rebuild the response
+	// Rebuild the response.
 	contentBytes, _ := json.Marshal(content)
 	result["content"] = contentBytes
 	resultBytes, _ := json.Marshal(result)
@@ -161,82 +275,10 @@ func rewriteLine(line string) string {
 	return string(output)
 }
 
-// tryConvertToGCF attempts to parse text as a JSON payload with GCF-compatible
-// structure and convert it. Returns empty string if not convertible.
-func tryConvertToGCF(text string) string {
-	trimmed := strings.TrimSpace(text)
-	if len(trimmed) == 0 || trimmed[0] != '{' {
-		return ""
-	}
-
-	var payload struct {
-		Tool        string `json:"tool"`
-		TokensUsed  int    `json:"tokensUsed"`
-		TokenBudget int    `json:"tokenBudget"`
-		PackRoot    string `json:"packRoot"`
-		Symbols     []struct {
-			QualifiedName string  `json:"qualifiedName"`
-			Kind          string  `json:"kind"`
-			Score         float64 `json:"score"`
-			Provenance    string  `json:"provenance"`
-			Distance      int     `json:"distance"`
-		} `json:"symbols"`
-		Edges []struct {
-			Source   string `json:"source"`
-			Target   string `json:"target"`
-			EdgeType string `json:"edgeType"`
-			Status   string `json:"status"`
-		} `json:"edges"`
-	}
-
-	if err := json.Unmarshal([]byte(trimmed), &payload); err != nil {
-		return ""
-	}
-
-	// Graph profile: payload has tool + symbols
-	if payload.Tool != "" && payload.Symbols != nil {
-		p := &gcf.Payload{
-			Tool:        payload.Tool,
-			TokensUsed:  payload.TokensUsed,
-			TokenBudget: payload.TokenBudget,
-			PackRoot:    payload.PackRoot,
-		}
-
-		for _, s := range payload.Symbols {
-			p.Symbols = append(p.Symbols, gcf.Symbol{
-				QualifiedName: s.QualifiedName,
-				Kind:          s.Kind,
-				Score:         s.Score,
-				Provenance:    s.Provenance,
-				Distance:      s.Distance,
-			})
-		}
-
-		for _, e := range payload.Edges {
-			p.Edges = append(p.Edges, gcf.Edge{
-				Source:   e.Source,
-				Target:   e.Target,
-				EdgeType: e.EdgeType,
-				Status:   e.Status,
-			})
-		}
-
-		return gcf.Encode(p)
-	}
-
-	// Tabular profile: any structured JSON
-	var generic any
-	if err := json.Unmarshal([]byte(trimmed), &generic); err != nil {
-		return ""
-	}
-	result := gcf.EncodeGeneric(generic)
-	if result == "" {
-		return ""
-	}
-	return result
-}
-
 func fatal(format string, args ...interface{}) {
 	fmt.Fprintf(os.Stderr, "gcf-proxy: "+format+"\n", args...)
 	os.Exit(1)
 }
+
+// Ensure io is used (needed for stdin copy goroutine).
+var _ = io.Discard
