@@ -8,7 +8,7 @@
 
 **MCP proxy that re-encodes JSON tool responses as GCF. Drop-in, zero changes to your server.**
 
-84% fewer tokens. 100% comprehension accuracy. One line change in your MCP config.
+79% fewer tokens. 100% comprehension accuracy (13/13). One line change in your MCP config.
 
 ## Install
 
@@ -42,11 +42,11 @@ That's it. Your server keeps outputting JSON. The LLM receives GCF. Nothing else
 ### After (LLM receives GCF, 1,900 tokens):
 
 ```
-GCF tool=context_for_task budget=5000 tokens=1900 symbols=50
+GCF tool=context_for_task budget=5000 tokens=1900 symbols=50 edges=20
 ## targets
 @0 fn pkg.Auth 0.78 lsp_resolved
 ...
-## edges
+## edges [20]
 @0<@1 calls
 ```
 
@@ -67,6 +67,20 @@ Sometimes you can't. The server is a third-party binary, or it's maintained by a
 
 If you control the server, use the [GCF libraries](https://github.com/blackwell-systems/gcf) directly for better control over session deduplication and delta encoding.
 
+## Benchmarks
+
+GCF achieves 100% comprehension accuracy at 500 symbols where JSON scores 76.9% and TOON scores 92.3%. On TOON's own benchmark, GCF wins all 6 datasets.
+
+| Format | Accuracy | Tokens | vs JSON |
+|--------|----------|--------|---------|
+| **GCF** | **100%** (13/13) | **11,090** | **79% fewer** |
+| TOON | 92.3% (12/13) | 16,378 | 69% fewer |
+| JSON | 76.9% (10/13) | 53,341 | baseline |
+
+Reproduce comprehension eval: `git clone https://github.com/blackwell-systems/gcf-go && cd gcf-go/eval && GOWORK=off go test -run TestComprehension -v -timeout 0`
+
+Reproduce token benchmark: `git clone https://github.com/blackwell-systems/toon && cd toon && git checkout gcf-comparison && cd benchmarks && pnpm install && pnpm benchmark:tokens`
+
 ## Links
 
 - [GCF Specification](https://github.com/blackwell-systems/gcf)
@@ -74,6 +88,9 @@ If you control the server, use the [GCF libraries](https://github.com/blackwell-
 - [Go library](https://github.com/blackwell-systems/gcf-go)
 - [TypeScript library](https://github.com/blackwell-systems/gcf-typescript)
 - [Python library](https://github.com/blackwell-systems/gcf-python)
+- [Rust library](https://github.com/blackwell-systems/gcf-rust)
+- [Swift library](https://github.com/blackwell-systems/gcf-swift)
+- [Kotlin library](https://github.com/blackwell-systems/gcf-kotlin)
 
 ## License
 
