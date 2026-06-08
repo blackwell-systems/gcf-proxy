@@ -19,9 +19,11 @@ import (
 	"io"
 	"os"
 	"os/exec"
+	"os/signal"
 	"strconv"
 	"strings"
 	"sync"
+	"syscall"
 )
 
 var version = "dev"
@@ -89,9 +91,11 @@ done:
 	serverCmd := args[0]
 	serverArgs := args[1:]
 
+	stats := &Stats{}
 	rewriter := NewRewriter(RewriterConfig{
 		StreamThreshold: streamThreshold,
 		EnableProgress:  enableProgress,
+		Stats:           stats,
 	})
 
 	cmd := exec.Command(serverCmd, serverArgs...)
@@ -110,6 +114,15 @@ done:
 	if err := cmd.Start(); err != nil {
 		fatal("failed to start server: %v", err)
 	}
+
+	// Print stats on shutdown signals.
+	sigCh := make(chan os.Signal, 1)
+	signal.Notify(sigCh, syscall.SIGINT, syscall.SIGTERM)
+	go func() {
+		<-sigCh
+		stats.WriteSummary(os.Stderr)
+		cmd.Process.Signal(syscall.SIGTERM)
+	}()
 
 	// Output mutex: ensures progress notifications and responses don't interleave.
 	var outputMu sync.Mutex
@@ -147,11 +160,13 @@ done:
 	}
 
 	if err := cmd.Wait(); err != nil {
+		stats.WriteSummary(os.Stderr)
 		if exitErr, ok := err.(*exec.ExitError); ok {
 			os.Exit(exitErr.ExitCode())
 		}
 		os.Exit(1)
 	}
+	stats.WriteSummary(os.Stderr)
 }
 
 // extractProgressToken looks for tools/call requests and caches their progressToken.

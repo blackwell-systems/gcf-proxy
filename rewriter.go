@@ -10,8 +10,9 @@ import (
 
 // RewriterConfig controls streaming behavior.
 type RewriterConfig struct {
-	StreamThreshold int  // Min symbols before triggering incremental mode (default 5)
-	EnableProgress  bool // Whether to emit progress notifications
+	StreamThreshold int    // Min symbols before triggering incremental mode (default 5)
+	EnableProgress  bool   // Whether to emit progress notifications
+	Stats           *Stats // Optional stats tracker
 }
 
 // ProgressFunc is called with partial GCF output and progress info.
@@ -63,6 +64,9 @@ func (r *Rewriter) RewriteToolResult(text string, progressFn ProgressFunc) Rewri
 	encoded := gcf.EncodeGeneric(generic)
 	if encoded == "" {
 		return RewriteResult{Original: text}
+	}
+	if r.config.Stats != nil {
+		r.config.Stats.Record(len(trimmed), len(encoded), 0, 0)
 	}
 	return RewriteResult{Original: text, Rewritten: encoded, Converted: true}
 }
@@ -130,6 +134,9 @@ func (r *Rewriter) tryGraphProfile(text string, progressFn ProgressFunc) Rewrite
 		})
 	}
 	encoded := gcf.Encode(p)
+	if r.config.Stats != nil {
+		r.config.Stats.Record(len(text), len(encoded), len(p.Symbols), len(p.Edges))
+	}
 	return RewriteResult{
 		Original:    text,
 		Rewritten:   encoded,
@@ -202,9 +209,13 @@ func (r *Rewriter) encodeStreaming(payload *struct {
 		progressFn(fragment, total, total)
 	}
 
+	output := buf.String()
+	if r.config.Stats != nil {
+		r.config.Stats.Record(0, len(output), total, len(payload.Edges))
+	}
 	return RewriteResult{
 		Original:    "",
-		Rewritten:   buf.String(),
+		Rewritten:   output,
 		Converted:   true,
 		SymbolCount: total,
 		EdgeCount:   len(payload.Edges),
