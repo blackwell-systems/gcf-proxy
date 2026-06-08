@@ -21,22 +21,26 @@ go install github.com/blackwell-systems/gcf-proxy@latest      # Go
 ## Try it (30 seconds, no auth)
 
 ```bash
-gcf-proxy --verbose npx -y @modelcontextprotocol/server-memory
+gcf-proxy --verbose uvx yfinance-mcp
 ```
 
 Use it with any MCP client. When tools return structured JSON, the proxy re-encodes to GCF and logs savings to stderr:
 
 ```
-gcf-proxy: read_graph                     1.0KB -> 467B (55% saved)
+gcf-proxy: get_price_history              54.0KB -> 28.1KB (48% saved)
+gcf-proxy: get_ticker_info                10.0KB -> 7.4KB (26% saved)
+gcf-proxy: get_price_history              53.8KB -> 27.9KB (48% saved)
 
 --- gcf-proxy session stats ---
-Tool calls rewritten:  1
-JSON bytes in:         1.0KB
-GCF bytes out:         467B
-Bytes saved:           565B (54.7%)
-Est. tokens saved:     ~141
+Tool calls rewritten:  3
+JSON bytes in:         117.8KB
+GCF bytes out:         63.4KB
+Bytes saved:           54.4KB (46.2%)
+Est. tokens saved:     ~13.6K
 -------------------------------
 ```
+
+Real live stock data from Yahoo Finance. 118KB of JSON reduced to 63KB. ~13,600 tokens saved in 3 tool calls.
 
 ## Usage
 

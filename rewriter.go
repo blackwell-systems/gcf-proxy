@@ -47,17 +47,19 @@ func NewRewriter(config RewriterConfig) *Rewriter {
 // incremental GCF fragments via the callback.
 func (r *Rewriter) RewriteToolResult(text string, progressFn ProgressFunc) RewriteResult {
 	trimmed := strings.TrimSpace(text)
-	if len(trimmed) == 0 || trimmed[0] != '{' {
+	if len(trimmed) == 0 || (trimmed[0] != '{' && trimmed[0] != '[') {
 		return RewriteResult{Original: text}
 	}
 
-	// Try graph profile first (has tool + symbols).
-	result := r.tryGraphProfile(trimmed, progressFn)
-	if result.Converted {
-		return result
+	// Try graph profile first (has tool + symbols). Objects only.
+	if trimmed[0] == '{' {
+		result := r.tryGraphProfile(trimmed, progressFn)
+		if result.Converted {
+			return result
+		}
 	}
 
-	// Fall back to generic profile (any structured JSON).
+	// Fall back to generic profile (any structured JSON, including arrays).
 	var generic any
 	if err := json.Unmarshal([]byte(trimmed), &generic); err != nil {
 		return RewriteResult{Original: text}
