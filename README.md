@@ -8,7 +8,7 @@
 
 **MCP proxy that re-encodes JSON tool responses as GCF. Drop-in, zero changes to your server.**
 
-79% fewer tokens. 90.7% comprehension accuracy across 10 models. One line change in your MCP config.
+79% fewer tokens than JSON. 90.7% comprehension accuracy where JSON averages 53.6% (1,300+ evals, 10 models, 3 providers). One line change in your MCP config.
 
 ## Install
 
