@@ -120,4 +120,4 @@ Reproduce token benchmark: `git clone https://github.com/blackwell-systems/toon 
 
 ## License
 
-MIT
+MIT - [Dayna Blackwell](https://github.com/blackwell-systems) / [GCF](https://github.com/blackwell-systems/gcf)
