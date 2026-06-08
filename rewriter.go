@@ -13,6 +13,7 @@ type RewriterConfig struct {
 	StreamThreshold int    // Min symbols before triggering incremental mode (default 5)
 	EnableProgress  bool   // Whether to emit progress notifications
 	Stats           *Stats // Optional stats tracker
+	Verbose         bool   // Log per-call savings to stderr
 }
 
 // ProgressFunc is called with partial GCF output and progress info.

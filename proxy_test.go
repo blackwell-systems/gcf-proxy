@@ -177,9 +177,13 @@ func TestExtractProgressToken(t *testing.T) {
 
 	line := `{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"blast_radius","arguments":{},"_meta":{"progressToken":"tok123"}}}`
 
-	extractProgressToken(line, &mu, tokens)
+	names := make(map[string]string)
+	extractRequestMeta(line, &mu, tokens, names)
 
 	if _, ok := tokens["1"]; !ok {
 		t.Error("expected token for request ID 1")
+	}
+	if names["1"] != "blast_radius" {
+		t.Errorf("expected tool name 'blast_radius', got %q", names["1"])
 	}
 }

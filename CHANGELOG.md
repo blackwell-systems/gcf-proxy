@@ -2,7 +2,8 @@
 
 ## v0.3.0
 
-- **Session stats**: the proxy now tracks cumulative conversion metrics and prints a summary to stderr on exit. Shows tool calls rewritten, JSON bytes in, GCF bytes out, bytes saved (with percentage), and estimated tokens saved.
+- **Session stats**: the proxy tracks cumulative conversion metrics and prints a summary to stderr on exit. Shows tool calls rewritten, JSON bytes in, GCF bytes out, bytes saved (with percentage), and estimated tokens saved.
+- **`--verbose`**: per-call savings logged to stderr with tool name, JSON size, GCF size, and percentage saved.
 - Fix comprehension accuracy figure (90.5% -> 90.7%)
 
 ## v0.2.0

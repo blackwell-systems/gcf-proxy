@@ -38,6 +38,7 @@ Usage:
 Flags:
   --stream-threshold N   Min symbols before streaming mode activates (default: 5)
   --no-progress          Disable progress notifications
+  --verbose              Log per-call savings to stderr
 
 Example:
   gcf-proxy memory-mcp-server-go
@@ -66,6 +67,7 @@ Version: %s
 	// Parse flags.
 	streamThreshold := 5
 	enableProgress := true
+	verbose := false
 	args := os.Args[1:]
 
 	for len(args) > 0 {
@@ -77,6 +79,9 @@ Version: %s
 			args = args[2:]
 		case args[0] == "--no-progress":
 			enableProgress = false
+			args = args[1:]
+		case args[0] == "--verbose":
+			verbose = true
 			args = args[1:]
 		default:
 			goto done
@@ -96,6 +101,7 @@ done:
 		StreamThreshold: streamThreshold,
 		EnableProgress:  enableProgress,
 		Stats:           stats,
+		Verbose:         verbose,
 	})
 
 	cmd := exec.Command(serverCmd, serverArgs...)
@@ -127,9 +133,10 @@ done:
 	// Output mutex: ensures progress notifications and responses don't interleave.
 	var outputMu sync.Mutex
 
-	// Track active progress tokens from tool call requests.
+	// Track active progress tokens and tool names from tool call requests.
 	var tokenMu sync.Mutex
 	activeTokens := make(map[string]json.RawMessage) // request ID -> progressToken
+	toolNames := make(map[string]string)              // request ID -> tool name
 
 	// Proxy client stdin -> server stdin, capturing progress tokens from requests.
 	go func() {
@@ -138,8 +145,8 @@ done:
 		for scanner.Scan() {
 			line := scanner.Text()
 
-			// Try to extract progressToken from tool call requests.
-			extractProgressToken(line, &tokenMu, activeTokens)
+			// Try to extract progressToken and tool name from tool call requests.
+			extractRequestMeta(line, &tokenMu, activeTokens, toolNames)
 
 			serverStdin.Write([]byte(line))
 			serverStdin.Write([]byte("\n"))
@@ -153,7 +160,7 @@ done:
 
 	for scanner.Scan() {
 		line := scanner.Text()
-		rewritten := rewriteResponse(line, rewriter, &outputMu, &tokenMu, activeTokens)
+		rewritten := rewriteResponse(line, rewriter, &outputMu, &tokenMu, activeTokens, toolNames)
 		outputMu.Lock()
 		fmt.Println(rewritten)
 		outputMu.Unlock()
@@ -169,8 +176,8 @@ done:
 	stats.WriteSummary(os.Stderr)
 }
 
-// extractProgressToken looks for tools/call requests and caches their progressToken.
-func extractProgressToken(line string, mu *sync.Mutex, tokens map[string]json.RawMessage) {
+// extractRequestMeta looks for tools/call requests and caches their progressToken and tool name.
+func extractRequestMeta(line string, mu *sync.Mutex, tokens map[string]json.RawMessage, names map[string]string) {
 	trimmed := strings.TrimSpace(line)
 	if len(trimmed) == 0 || trimmed[0] != '{' {
 		return
@@ -180,6 +187,7 @@ func extractProgressToken(line string, mu *sync.Mutex, tokens map[string]json.Ra
 		ID     json.RawMessage `json:"id"`
 		Method string          `json:"method"`
 		Params struct {
+			Name string `json:"name"`
 			Meta struct {
 				ProgressToken json.RawMessage `json:"progressToken"`
 			} `json:"_meta"`
@@ -191,18 +199,20 @@ func extractProgressToken(line string, mu *sync.Mutex, tokens map[string]json.Ra
 	if msg.Method != "tools/call" || msg.ID == nil {
 		return
 	}
-	if msg.Params.Meta.ProgressToken == nil || string(msg.Params.Meta.ProgressToken) == "null" {
-		return
-	}
 
 	mu.Lock()
-	tokens[string(msg.ID)] = msg.Params.Meta.ProgressToken
+	if msg.Params.Name != "" {
+		names[string(msg.ID)] = msg.Params.Name
+	}
+	if msg.Params.Meta.ProgressToken != nil && string(msg.Params.Meta.ProgressToken) != "null" {
+		tokens[string(msg.ID)] = msg.Params.Meta.ProgressToken
+	}
 	mu.Unlock()
 }
 
 // rewriteResponse processes a JSON-RPC response line, converting tool result
 // content to GCF and optionally emitting progress notifications.
-func rewriteResponse(line string, rw *Rewriter, outputMu *sync.Mutex, tokenMu *sync.Mutex, tokens map[string]json.RawMessage) string {
+func rewriteResponse(line string, rw *Rewriter, outputMu *sync.Mutex, tokenMu *sync.Mutex, tokens map[string]json.RawMessage, names map[string]string) string {
 	trimmed := strings.TrimSpace(line)
 	if len(trimmed) == 0 || trimmed[0] != '{' {
 		return line
@@ -220,12 +230,17 @@ func rewriteResponse(line string, rw *Rewriter, outputMu *sync.Mutex, tokenMu *s
 		return line
 	}
 
-	// Look up progressToken for this response's request ID.
+	// Look up progressToken and tool name for this response's request ID.
 	var progressToken json.RawMessage
+	var toolName string
 	tokenMu.Lock()
 	if tok, ok := tokens[string(idRaw)]; ok {
 		progressToken = tok
 		delete(tokens, string(idRaw))
+	}
+	if name, ok := names[string(idRaw)]; ok {
+		toolName = name
+		delete(names, string(idRaw))
 	}
 	tokenMu.Unlock()
 
@@ -274,6 +289,14 @@ func rewriteResponse(line string, rw *Rewriter, outputMu *sync.Mutex, tokenMu *s
 		if res.Converted {
 			content[i]["text"] = res.Rewritten
 			modified = true
+			if rw.config.Verbose && toolName != "" {
+				jsonSize := len(text)
+				gcfSize := len(res.Rewritten)
+				saved := jsonSize - gcfSize
+				pct := float64(saved) / float64(jsonSize) * 100
+				fmt.Fprintf(os.Stderr, "gcf-proxy: %-30s %s -> %s (%.0f%% saved)\n",
+					toolName, fmtBytes(int64(jsonSize)), fmtBytes(int64(gcfSize)), pct)
+			}
 		}
 	}
 
