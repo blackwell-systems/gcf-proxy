@@ -18,20 +18,42 @@ npm install -g @blackwell-systems/gcf-proxy                   # npm
 go install github.com/blackwell-systems/gcf-proxy@latest      # Go
 ```
 
+## Try it (30 seconds, no auth)
+
+```bash
+gcf-proxy --verbose npx -y @modelcontextprotocol/server-memory
+```
+
+Use it with any MCP client. When tools return structured JSON, the proxy re-encodes to GCF and logs savings to stderr:
+
+```
+gcf-proxy: read_graph                     1.0KB -> 467B (55% saved)
+
+--- gcf-proxy session stats ---
+Tool calls rewritten:  1
+JSON bytes in:         1.0KB
+GCF bytes out:         467B
+Bytes saved:           565B (54.7%)
+Est. tokens saved:     ~141
+-------------------------------
+```
+
 ## Usage
+
+Add `gcf-proxy` in front of any MCP server command in your config:
 
 ```json
 {
   "mcpServers": {
     "memory": {
       "command": "gcf-proxy",
-      "args": ["memory-mcp-server-go"]
+      "args": ["npx", "-y", "@modelcontextprotocol/server-memory"]
     }
   }
 }
 ```
 
-That's it. Your server keeps outputting JSON. The LLM receives GCF. Nothing else changes.
+Your server keeps outputting JSON. The LLM receives GCF. Nothing else changes.
 
 ### Before (your server outputs JSON, 12,000 tokens):
 
