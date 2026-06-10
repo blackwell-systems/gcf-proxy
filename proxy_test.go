@@ -187,3 +187,50 @@ func TestExtractProgressToken(t *testing.T) {
 		t.Errorf("expected tool name 'blast_radius', got %q", names["1"])
 	}
 }
+
+func TestRewriter_V2GraphHeader(t *testing.T) {
+	rw := NewRewriter(RewriterConfig{StreamThreshold: 5})
+	payload := `{"tool":"test","tokensUsed":50,"tokenBudget":500,"symbols":[{"qualifiedName":"a.A","kind":"function","score":0.9,"provenance":"lsp","distance":0}],"edges":[]}`
+	result := rw.RewriteToolResult(payload, nil)
+	if !result.Converted {
+		t.Fatal("expected conversion")
+	}
+	if !strings.HasPrefix(result.Rewritten, "GCF profile=graph ") {
+		t.Errorf("graph output missing v2.0 profile header:\n%s", result.Rewritten)
+	}
+}
+
+func TestRewriter_V2GenericHeader(t *testing.T) {
+	rw := NewRewriter(RewriterConfig{StreamThreshold: 5})
+	payload := `{"employees":[{"id":1,"name":"Alice"},{"id":2,"name":"Bob"}]}`
+	result := rw.RewriteToolResult(payload, nil)
+	if !result.Converted {
+		t.Fatal("expected conversion")
+	}
+	if !strings.HasPrefix(result.Rewritten, "GCF profile=generic\n") {
+		t.Errorf("generic output missing v2.0 profile header:\n%s", result.Rewritten)
+	}
+}
+
+func TestRewriter_V2StreamingTrailer(t *testing.T) {
+	rw := NewRewriter(RewriterConfig{StreamThreshold: 2, EnableProgress: true})
+	symbols := make([]map[string]any, 4)
+	for i := 0; i < 4; i++ {
+		symbols[i] = map[string]any{
+			"qualifiedName": "pkg.S" + string(rune('A'+i)),
+			"kind": "function", "score": 0.9, "provenance": "lsp", "distance": 0,
+		}
+	}
+	payload := map[string]any{"tool": "test", "tokensUsed": 100, "tokenBudget": 1000, "symbols": symbols, "edges": []any{}}
+	payloadJSON, _ := json.Marshal(payload)
+	result := rw.RewriteToolResult(string(payloadJSON), func(string, int, int) {})
+	if !result.Converted {
+		t.Fatal("expected conversion")
+	}
+	if !strings.Contains(result.Rewritten, "##! summary") {
+		t.Errorf("streaming output missing v2.0 ##! trailer:\n%s", result.Rewritten)
+	}
+	if strings.Contains(result.Rewritten, "## _summary") {
+		t.Errorf("streaming output has old ## _summary trailer:\n%s", result.Rewritten)
+	}
+}
