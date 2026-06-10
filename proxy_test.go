@@ -18,7 +18,7 @@ func TestRewriter_BasicConversion(t *testing.T) {
 	if !result.Converted {
 		t.Fatal("expected conversion")
 	}
-	if !strings.Contains(result.Rewritten, "GCF tool=test") {
+	if !strings.Contains(result.Rewritten, "GCF profile=graph tool=test") {
 		t.Errorf("expected GCF header, got:\n%s", result.Rewritten)
 	}
 	if !strings.Contains(result.Rewritten, "@0 fn pkg.A 0.90 lsp") {

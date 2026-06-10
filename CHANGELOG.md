@@ -1,5 +1,12 @@
 # Changelog
 
+## v0.4.0
+
+- **GCF v2.0**: bumped `gcf-go` dependency from v0.5.0 to v1.0.0
+- All output now uses v2.0 wire format: `GCF profile=graph` headers, `##! summary` trailers, scalar quoting, lossless generic profile
+- No proxy code changes needed; the library handles all v2.0 encoding
+- Test expectations updated for `profile=graph` header
+
 ## v0.3.0
 
 - **Session stats**: the proxy tracks cumulative conversion metrics and prints a summary to stderr on exit. Shows tool calls rewritten, JSON bytes in, GCF bytes out, bytes saved (with percentage), and estimated tokens saved.
