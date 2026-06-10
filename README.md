@@ -109,6 +109,8 @@ Reproduce token benchmark: `git clone https://github.com/blackwell-systems/toon 
 
 ## Links
 
+- [betterthanjson.com](https://betterthanjson.com)
+
 - [GCF Specification](https://github.com/blackwell-systems/gcf)
 - [Documentation](https://gcformat.com/)
 - [Go library](https://github.com/blackwell-systems/gcf-go)
