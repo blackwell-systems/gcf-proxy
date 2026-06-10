@@ -119,8 +119,15 @@ Reproduce token benchmark: `git clone https://github.com/blackwell-systems/toon 
 - [Swift library](https://github.com/blackwell-systems/gcf-swift)
 - [Kotlin library](https://github.com/blackwell-systems/gcf-kotlin)
 
+
+<details>
+<summary>More links</summary>
+
 - [betterthanjson.com](https://betterthanjson.com)
 - [jsonalternative.com](https://jsonalternative.com)
+- [betterthantoon.com](https://betterthantoon.com)
+
+</details>
 
 ## License
 
