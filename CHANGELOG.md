@@ -1,5 +1,11 @@
 # Changelog
 
+## v0.9.0
+
+- **Response caching** (`--cache`): identical tool call responses return cached GCF instantly. Zero re-encoding, zero upstream calls on cache hit.
+- **Min-size bypass** (`--min-size N`): skip encoding for responses smaller than N bytes where GCF header overhead exceeds savings.
+- Cache hit stats in verbose output and session summary.
+
 ## v0.8.0
 
 - **HTTP/SSE frontend** (`--http :9090`): serve MCP over Streamable HTTP. Turns any stdio MCP server into a remote service. Supports JSON and SSE responses, health check endpoint.

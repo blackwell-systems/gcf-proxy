@@ -557,6 +557,74 @@ func TestHTTPFrontend_SSEResponse(t *testing.T) {
 	}
 }
 
+func TestCache_HitOnIdenticalContent(t *testing.T) {
+	rw := NewRewriter(RewriterConfig{StreamThreshold: 100, EnableCache: true})
+
+	payload := `{"employees":[{"id":1,"name":"Alice"},{"id":2,"name":"Bob"}]}`
+
+	r1 := rw.RewriteToolResult(payload, nil)
+	if !r1.Converted {
+		t.Fatal("expected conversion on first call")
+	}
+
+	r2 := rw.RewriteToolResult(payload, nil)
+	if !r2.Converted {
+		t.Fatal("expected conversion on second call")
+	}
+
+	// Second call should return identical result (cache hit).
+	if r1.Rewritten != r2.Rewritten {
+		t.Error("cache hit should return identical output")
+	}
+}
+
+func TestCache_MissOnDifferentContent(t *testing.T) {
+	rw := NewRewriter(RewriterConfig{StreamThreshold: 100, EnableCache: true})
+
+	r1 := rw.RewriteToolResult(`{"name":"Alice"}`, nil)
+	r2 := rw.RewriteToolResult(`{"name":"Bob"}`, nil)
+
+	if r1.Rewritten == r2.Rewritten {
+		t.Error("different input should produce different output")
+	}
+}
+
+func TestCache_DisabledByDefault(t *testing.T) {
+	rw := NewRewriter(RewriterConfig{StreamThreshold: 100})
+	if rw.cache != nil {
+		t.Error("cache should be nil when not enabled")
+	}
+}
+
+func TestMinSize_SkipsSmallResponses(t *testing.T) {
+	rw := NewRewriter(RewriterConfig{StreamThreshold: 100, MinSize: 100})
+
+	// 16 bytes, below threshold.
+	r := rw.RewriteToolResult(`{"x":1}`, nil)
+	if r.Converted {
+		t.Error("small response should be skipped")
+	}
+}
+
+func TestMinSize_EncodesLargeResponses(t *testing.T) {
+	rw := NewRewriter(RewriterConfig{StreamThreshold: 100, MinSize: 10})
+
+	payload := `{"employees":[{"id":1,"name":"Alice"},{"id":2,"name":"Bob"}]}`
+	r := rw.RewriteToolResult(payload, nil)
+	if !r.Converted {
+		t.Error("large response should be encoded")
+	}
+}
+
+func TestMinSize_ZeroMeansNoMinimum(t *testing.T) {
+	rw := NewRewriter(RewriterConfig{StreamThreshold: 100, MinSize: 0})
+
+	r := rw.RewriteToolResult(`{"x":1}`, nil)
+	if !r.Converted {
+		t.Error("with min-size 0, all JSON should be encoded")
+	}
+}
+
 func TestRewriter_V2GraphHeader(t *testing.T) {
 	rw := NewRewriter(RewriterConfig{StreamThreshold: 5})
 	payload := `{"tool":"test","tokensUsed":50,"tokenBudget":500,"symbols":[{"qualifiedName":"a.A","kind":"function","score":0.9,"provenance":"lsp","distance":0}],"edges":[]}`

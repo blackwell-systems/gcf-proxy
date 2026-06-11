@@ -8,11 +8,12 @@ import (
 
 // Stats tracks cumulative JSON-to-GCF conversion metrics.
 type Stats struct {
-	Calls       atomic.Int64
-	JSONBytes   atomic.Int64
-	GCFBytes    atomic.Int64
-	Symbols     atomic.Int64
-	Edges       atomic.Int64
+	Calls        atomic.Int64
+	JSONBytes    atomic.Int64
+	GCFBytes     atomic.Int64
+	Symbols      atomic.Int64
+	Edges        atomic.Int64
+	CacheHits    atomic.Int64
 	SessionDedup bool // whether session dedup is active
 }
 
@@ -57,6 +58,9 @@ func (s *Stats) WriteSummary(w io.Writer) {
 
 	fmt.Fprintf(w, "\n--- gcf-proxy session stats ---\n")
 	fmt.Fprintf(w, "Tool calls rewritten:  %d\n", calls)
+	if hits := s.CacheHits.Load(); hits > 0 {
+		fmt.Fprintf(w, "Cache hits:            %d\n", hits)
+	}
 	fmt.Fprintf(w, "Symbols processed:     %d\n", s.Symbols.Load())
 	fmt.Fprintf(w, "Edges processed:       %d\n", s.Edges.Load())
 	fmt.Fprintf(w, "JSON bytes in:         %s\n", fmtBytes(jsonB))

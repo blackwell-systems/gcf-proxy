@@ -47,6 +47,8 @@ Flags:
   --http <addr>          Serve MCP over Streamable HTTP (e.g. :9090, 0.0.0.0:8080)
   --upstream <url>       Connect to a remote MCP server over HTTP
   --session              Enable session dedup (bare refs for previously-transmitted symbols)
+  --cache                Cache encoded responses for identical tool calls
+  --min-size N           Skip encoding for responses smaller than N bytes (default: 0, no minimum)
   --stream-threshold N   Min symbols before streaming mode activates (default: 5)
   --no-progress          Disable progress notifications
   --verbose              Log per-call savings to stderr
@@ -87,6 +89,8 @@ Version: %s
 	verbose := false
 	upstreamURL := ""
 	enableSession := false
+	enableCache := false
+	minSize := 0
 	httpAddr := ""
 	args := os.Args[1:]
 
@@ -109,6 +113,14 @@ Version: %s
 		case args[0] == "--session":
 			enableSession = true
 			args = args[1:]
+		case args[0] == "--cache":
+			enableCache = true
+			args = args[1:]
+		case args[0] == "--min-size" && len(args) > 1:
+			if n, err := strconv.Atoi(args[1]); err == nil {
+				minSize = n
+			}
+			args = args[2:]
 		case args[0] == "--http" && len(args) > 1:
 			httpAddr = args[1]
 			args = args[2:]
@@ -124,6 +136,8 @@ done:
 		EnableProgress:  enableProgress,
 		Stats:           stats,
 		Verbose:         verbose,
+		EnableCache:     enableCache,
+		MinSize:         minSize,
 	}
 	if enableSession {
 		config.Session = gcf.NewSession()

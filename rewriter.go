@@ -10,13 +10,15 @@ import (
 	gcf "github.com/blackwell-systems/gcf-go"
 )
 
-// RewriterConfig controls streaming and session behavior.
+// RewriterConfig controls streaming, session, and caching behavior.
 type RewriterConfig struct {
 	StreamThreshold int          // Min symbols before triggering incremental mode (default 5)
 	EnableProgress  bool         // Whether to emit progress notifications
 	Stats           *Stats       // Optional stats tracker
 	Verbose         bool         // Log per-call savings to stderr
 	Session         *gcf.Session // Optional session for cross-call dedup (nil = disabled)
+	EnableCache     bool         // Cache encoded responses for identical tool calls
+	MinSize         int          // Skip encoding for responses smaller than this (bytes, 0 = no minimum)
 }
 
 // ProgressFunc is called with partial GCF output and progress info.
@@ -35,6 +37,7 @@ type RewriteResult struct {
 // Rewriter handles JSON-to-GCF conversion with optional streaming progress.
 type Rewriter struct {
 	config RewriterConfig
+	cache  map[string]RewriteResult // tool+args hash -> cached result
 }
 
 // NewRewriter creates a Rewriter with the given config.
@@ -42,7 +45,11 @@ func NewRewriter(config RewriterConfig) *Rewriter {
 	if config.StreamThreshold <= 0 {
 		config.StreamThreshold = 5
 	}
-	return &Rewriter{config: config}
+	rw := &Rewriter{config: config}
+	if config.EnableCache {
+		rw.cache = make(map[string]RewriteResult)
+	}
+	return rw
 }
 
 // RewriteToolResult attempts to convert a JSON text content block to GCF.
@@ -52,6 +59,24 @@ func (r *Rewriter) RewriteToolResult(text string, progressFn ProgressFunc) Rewri
 	trimmed := strings.TrimSpace(text)
 	if len(trimmed) == 0 {
 		return RewriteResult{Original: text}
+	}
+
+	// Min-size bypass: skip encoding for tiny responses where header overhead > savings.
+	if r.config.MinSize > 0 && len(trimmed) < r.config.MinSize {
+		return RewriteResult{Original: text}
+	}
+
+	// Response cache: return cached result for identical content.
+	if r.cache != nil {
+		if cached, ok := r.cache[trimmed]; ok {
+			if r.config.Verbose {
+				fmt.Fprintf(os.Stderr, "gcf-proxy: cache hit (%d bytes)\n", len(cached.Rewritten))
+			}
+			if r.config.Stats != nil {
+				r.config.Stats.CacheHits.Add(1)
+			}
+			return cached
+		}
 	}
 
 	// GCF-in: if the upstream already produces GCF graph profile and we have
@@ -76,13 +101,13 @@ func (r *Rewriter) RewriteToolResult(text string, progressFn ProgressFunc) Rewri
 			if r.config.Stats != nil {
 				r.config.Stats.Record(len(trimmed), len(encoded), len(p.Symbols), len(p.Edges))
 			}
-			return RewriteResult{
+			return r.cacheResult(trimmed, RewriteResult{
 				Original:    text,
 				Rewritten:   encoded,
 				Converted:   true,
 				SymbolCount: len(p.Symbols),
 				EdgeCount:   len(p.Edges),
-			}
+			})
 		}
 	}
 
@@ -112,7 +137,15 @@ func (r *Rewriter) RewriteToolResult(text string, progressFn ProgressFunc) Rewri
 	if r.config.Stats != nil {
 		r.config.Stats.Record(len(trimmed), len(encoded), 0, 0)
 	}
-	return RewriteResult{Original: text, Rewritten: encoded, Converted: true}
+	return r.cacheResult(trimmed, RewriteResult{Original: text, Rewritten: encoded, Converted: true})
+}
+
+// cacheResult stores a result in the cache if caching is enabled.
+func (r *Rewriter) cacheResult(key string, result RewriteResult) RewriteResult {
+	if r.cache != nil && result.Converted {
+		r.cache[key] = result
+	}
+	return result
 }
 
 // decodeRequestGCF scans a JSON-RPC request line for GCF strings in tool call
@@ -260,13 +293,13 @@ func (r *Rewriter) tryGraphProfile(text string, progressFn ProgressFunc) Rewrite
 	if r.config.Stats != nil {
 		r.config.Stats.Record(len(text), len(encoded), len(p.Symbols), len(p.Edges))
 	}
-	return RewriteResult{
+	return r.cacheResult(text, RewriteResult{
 		Original:    text,
 		Rewritten:   encoded,
 		Converted:   true,
 		SymbolCount: len(p.Symbols),
 		EdgeCount:   len(p.Edges),
-	}
+	})
 }
 
 // encodeStreaming uses StreamEncoder and emits progress callbacks.
