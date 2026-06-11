@@ -49,7 +49,7 @@ Flags:
   --session              Enable session dedup (bare refs for previously-transmitted symbols)
   --cache                Cache encoded responses for identical tool calls
   --delta                Send only changed symbols when a tool's response changes slightly
-  --min-size N           Skip encoding for responses smaller than N bytes (default: 0, no minimum)
+  --min-size N           Skip encoding for responses smaller than N bytes (default: 100)
   --stream-threshold N   Min symbols before streaming mode activates (default: 5)
   --no-progress          Disable progress notifications
   --verbose              Log per-call savings to stderr
@@ -92,7 +92,7 @@ Version: %s
 	enableSession := false
 	enableCache := false
 	enableDelta := false
-	minSize := 0
+	minSize := 100
 	httpAddr := ""
 	args := os.Args[1:]
 

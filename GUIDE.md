@@ -132,6 +132,9 @@ GCF profile=graph tool=context_for_task budget=10000 tokens=3200 symbols=10 edge
 | `--http <addr>` | (none) | Serve MCP over Streamable HTTP (e.g. `:9090`) |
 | `--upstream <url>` | (none) | Connect to a remote MCP server over HTTP |
 | `--session` | off | Enable session dedup (bare refs for previously-transmitted symbols) |
+| `--delta` | off | Send only changed symbols when a tool's response changes slightly |
+| `--cache` | off | Cache encoded responses for identical tool calls |
+| `--min-size N` | 100 | Skip encoding for responses smaller than N bytes (0 to disable) |
 | `--stream-threshold N` | 5 | Min symbols before streaming progress activates |
 | `--no-progress` | false | Disable progress notifications |
 | `--verbose` | false | Log per-call savings to stderr |
@@ -149,6 +152,17 @@ Call 5: 6,335 bytes (175 bare refs, 41% saved)
 ```
 
 Works on both JSON-in (encode with session) and GCF-in (decode, re-encode with session). The session persists for the proxy's lifetime.
+
+## Delta encoding
+
+`--delta` compares each tool's response against the previous one. When only a few symbols changed, the proxy sends a delta (added/removed) instead of the full response.
+
+```
+Call 1: full response (1,416 bytes, 20 symbols)
+Call 2: delta (459 bytes, 2 symbols changed, 68% savings)
+```
+
+The server sends full responses every time. The proxy diffs transparently. Uses GCF's native delta format with `pack_root` content hashes. Skips delta when >60% of symbols changed (full response is more efficient) or when the delta is larger than the full response.
 
 ## Deploy as HTTP service
 
