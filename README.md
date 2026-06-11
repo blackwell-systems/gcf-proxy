@@ -44,7 +44,9 @@ Real live stock data from Yahoo Finance. 118KB of JSON reduced to 63KB. ~13,600 
 
 ## Usage
 
-Add `gcf-proxy` in front of any MCP server command in your config:
+### Local server (stdio)
+
+Add `gcf-proxy` in front of any MCP server command:
 
 ```json
 {
@@ -57,7 +59,24 @@ Add `gcf-proxy` in front of any MCP server command in your config:
 }
 ```
 
-Your server keeps outputting JSON. The LLM receives GCF. If the LLM produces GCF in tool call arguments, the server receives JSON. Neither side needs to change.
+### Remote server (HTTP)
+
+Point `--upstream` at any Streamable HTTP MCP server:
+
+```json
+{
+  "mcpServers": {
+    "remote": {
+      "command": "gcf-proxy",
+      "args": ["--upstream", "http://host:3000/mcp"]
+    }
+  }
+}
+```
+
+Supports JSON and SSE responses. Session ID tracking via `Mcp-Session-Id` is automatic.
+
+Both modes are bidirectional: server responses are encoded to GCF, GCF in tool call arguments is decoded to JSON. Neither side needs to change.
 
 ### Responses: Server (JSON) -> LLM (GCF)
 
