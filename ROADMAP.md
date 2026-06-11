@@ -100,7 +100,31 @@ Call 5: 6,335 bytes (175 bare refs, 41% saved)
 
 ---
 
-## Phase 5: Production Hardening
+## Phase 5: Response Caching
+
+Cache encoded responses for identical tool calls within a session. Agent loops often retry the same query; a cache hit returns zero tokens instead of re-encoding.
+
+**Planned:**
+- Cache key: hash of tool name + serialized arguments
+- Return cached GCF on exact match (no re-encoding, no upstream call)
+- Cache scoped to session lifetime (cleared on proxy restart)
+- `--cache` flag to enable (off by default)
+- Cache hit/miss stats in verbose output and session summary
+
+---
+
+## Phase 5.5: Min-Size Bypass
+
+Skip GCF encoding for tiny responses where the `GCF profile=generic` header overhead costs more than it saves.
+
+**Planned:**
+- `--min-size N` flag (default: 100 bytes)
+- Responses smaller than N bytes pass through as-is
+- Avoids wrapping 20-byte error messages in GCF headers
+
+---
+
+## Phase 7: Production Hardening
 
 Polish for production deployment. Build when demand arrives.
 
@@ -114,7 +138,7 @@ Polish for production deployment. Build when demand arrives.
 
 ---
 
-## Phase 6: Aggregate Proxy
+## Phase 8: Aggregate Proxy
 
 Single proxy process wrapping multiple MCP servers. One shared session across all backends.
 
