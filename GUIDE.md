@@ -129,10 +129,42 @@ GCF profile=graph tool=context_for_task budget=10000 tokens=3200 symbols=10 edge
 
 | Flag | Default | Description |
 |------|---------|-------------|
+| `--http <addr>` | (none) | Serve MCP over Streamable HTTP (e.g. `:9090`) |
 | `--upstream <url>` | (none) | Connect to a remote MCP server over HTTP |
+| `--session` | off | Enable session dedup (bare refs for previously-transmitted symbols) |
 | `--stream-threshold N` | 5 | Min symbols before streaming progress activates |
 | `--no-progress` | false | Disable progress notifications |
 | `--verbose` | false | Log per-call savings to stderr |
+
+## Session dedup
+
+`--session` tracks which graph symbols have been transmitted. On subsequent calls, known symbols become bare references (`@N  # previously transmitted`). Savings compound across a conversation.
+
+Proven end-to-end with agent-lsp:
+```
+Call 1: 5,730 bytes (baseline)
+Call 2: 3,450 bytes (94 bare refs, 40% saved)
+Call 3: 4,887 bytes (18 bare refs, 15% saved)
+Call 5: 6,335 bytes (175 bare refs, 41% saved)
+```
+
+Works on both JSON-in (encode with session) and GCF-in (decode, re-encode with session). The session persists for the proxy's lifetime.
+
+## Deploy as HTTP service
+
+`--http` turns the proxy into a Streamable HTTP server:
+
+```bash
+gcf-proxy --http :9090 --session your-mcp-server
+```
+
+Clients connect via HTTP POST. Responses are JSON or SSE depending on the `Accept` header. Health check at `/health`.
+
+Chains with `--upstream` for fully remote:
+
+```bash
+gcf-proxy --http :9090 --upstream http://remote:3000/mcp
+```
 
 ## Streaming progress
 
@@ -193,8 +225,10 @@ Check the URL includes the full MCP endpoint path (e.g., `http://host:3000/mcp`,
 |----------|-----|
 | You can't modify the server | Proxy |
 | Server is remote (HTTP) | Proxy (`--upstream`) |
+| Deploy as a shared service | Proxy (`--http :9090`) |
+| Multi-turn conversations with overlapping data | Proxy (`--session`) |
 | You want to test GCF savings without code changes | Proxy |
-| You control the server and want session dedup/delta | Library |
+| You control the server and want delta encoding | Library |
 | You want zero-effort adoption | Proxy |
 
 ## Links
