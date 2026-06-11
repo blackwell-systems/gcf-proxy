@@ -58,13 +58,17 @@ HTTP Client  ──POST──▶  Proxy (:9090)  ──stdin──▶  Upstream 
 
 ---
 
-## Phase 3: HTTP Backend + Session Dedup
+## Phase 3: HTTP Backend ✓ DONE (session dedup planned)
 
-The proxy connects to upstream servers over HTTP (not just stdio subprocess). Cross-request session deduplication via `gcf.Session`.
+The proxy connects to upstream servers over HTTP (not just stdio subprocess).
 
-**Planned:**
-- `backend_http.go`: HTTP client that POSTs to upstream MCP server, handles SSE responses
+**Shipped:**
+- `backend_http.go`: HTTP client that POSTs to upstream MCP server, handles both JSON and SSE responses
 - `--upstream http://localhost:3000/mcp`: connect to upstream via HTTP instead of spawning subprocess
+- `Mcp-Session-Id` header tracking (captured from upstream, sent on subsequent requests)
+- Same bidirectional GCF translation as stdio mode
+
+**Remaining (session dedup):**
 - `session.go`: cross-request `gcf.Session` state management
 - `--session`: enable session deduplication (previously-transmitted symbols become bare refs)
 - Session scoped to `Mcp-Session-Id` (HTTP) or process lifetime (stdio)

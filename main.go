@@ -36,23 +36,26 @@ func main() {
 		fmt.Fprintf(os.Stderr, `gcf-proxy - streaming MCP proxy that re-encodes JSON tool responses as GCF
 
 Usage:
-  gcf-proxy [flags] <mcp-server-command> [args...]
+  gcf-proxy [flags] <mcp-server-command> [args...]    # stdio backend (local)
+  gcf-proxy [flags] --upstream <url>                   # HTTP backend (remote)
 
 Flags:
+  --upstream <url>       Connect to a remote MCP server over HTTP instead of spawning a subprocess
   --stream-threshold N   Min symbols before streaming mode activates (default: 5)
   --no-progress          Disable progress notifications
   --verbose              Log per-call savings to stderr
 
-Example:
-  gcf-proxy memory-mcp-server-go
-  gcf-proxy npx -y @modelcontextprotocol/server-filesystem /tmp
-  gcf-proxy --stream-threshold 10 knowing
+Examples:
+  gcf-proxy memory-mcp-server-go                        # local subprocess
+  gcf-proxy --upstream http://localhost:3000/mcp         # remote HTTP server
+  gcf-proxy --verbose uvx yfinance-mcp                   # local with logging
+  gcf-proxy --upstream https://mcp.example.com/api       # remote HTTPS
 
-MCP config (before):
-  {"mcpServers": {"memory": {"command": "memory-mcp-server-go"}}}
-
-MCP config (after):
+MCP config (local):
   {"mcpServers": {"memory": {"command": "gcf-proxy", "args": ["memory-mcp-server-go"]}}}
+
+MCP config (remote):
+  {"mcpServers": {"remote": {"command": "gcf-proxy", "args": ["--upstream", "http://host:3000/mcp"]}}}
 
 Features:
   - Re-encodes JSON tool responses as GCF (79%% fewer input tokens)
@@ -72,6 +75,7 @@ Version: %s
 	streamThreshold := 5
 	enableProgress := true
 	verbose := false
+	upstreamURL := ""
 	args := os.Args[1:]
 
 	for len(args) > 0 {
@@ -87,18 +91,14 @@ Version: %s
 		case args[0] == "--verbose":
 			verbose = true
 			args = args[1:]
+		case args[0] == "--upstream" && len(args) > 1:
+			upstreamURL = args[1]
+			args = args[2:]
 		default:
 			goto done
 		}
 	}
 done:
-
-	if len(args) == 0 {
-		fatal("no server command specified")
-	}
-
-	serverCmd := args[0]
-	serverArgs := args[1:]
 
 	stats := &Stats{}
 	rewriter := NewRewriter(RewriterConfig{
@@ -107,6 +107,19 @@ done:
 		Stats:           stats,
 		Verbose:         verbose,
 	})
+
+	// HTTP backend mode: connect to remote MCP server.
+	if upstreamURL != "" {
+		runHTTPBackend(upstreamURL, rewriter, stats, verbose)
+		return
+	}
+
+	if len(args) == 0 {
+		fatal("no server command specified")
+	}
+
+	serverCmd := args[0]
+	serverArgs := args[1:]
 
 	cmd := exec.Command(serverCmd, serverArgs...)
 	cmd.Stderr = os.Stderr
@@ -320,6 +333,73 @@ func rewriteResponse(line string, rw *Rewriter, outputMu *sync.Mutex, tokenMu *s
 	msg["result"] = resultBytes
 	output, _ := json.Marshal(msg)
 	return string(output)
+}
+
+// runHTTPBackend proxies stdin (from MCP client) to a remote MCP server over HTTP.
+// Responses are rewritten from JSON to GCF. Requests with GCF arguments are decoded.
+func runHTTPBackend(url string, rewriter *Rewriter, stats *Stats, verbose bool) {
+	backend := NewHTTPBackend(url)
+
+	if verbose {
+		fmt.Fprintf(os.Stderr, "gcf-proxy: connecting to upstream %s\n", url)
+	}
+
+	// Output mutex for progress notifications.
+	var outputMu sync.Mutex
+
+	// Track progress tokens and tool names.
+	var tokenMu sync.Mutex
+	activeTokens := make(map[string]json.RawMessage)
+	toolNames := make(map[string]string)
+
+	// Handle signals.
+	sigCh := make(chan os.Signal, 1)
+	signal.Notify(sigCh, syscall.SIGINT, syscall.SIGTERM)
+	go func() {
+		<-sigCh
+		stats.WriteSummary(os.Stderr)
+		os.Exit(0)
+	}()
+
+	scanner := bufio.NewScanner(os.Stdin)
+	scanner.Buffer(make([]byte, 0, 10*1024*1024), 10*1024*1024)
+
+	for scanner.Scan() {
+		line := scanner.Text()
+		if strings.TrimSpace(line) == "" {
+			continue
+		}
+
+		// Extract progress tokens from requests.
+		extractRequestMeta(line, &tokenMu, activeTokens, toolNames)
+
+		// Decode GCF in tool call arguments.
+		line = decodeRequestGCF(line)
+
+		// Send to upstream.
+		responses, err := backend.Send(line)
+		if err != nil {
+			if verbose {
+				fmt.Fprintf(os.Stderr, "gcf-proxy: upstream error: %v\n", err)
+			}
+			// Return a JSON-RPC error to the client.
+			errResp := fmt.Sprintf(`{"jsonrpc":"2.0","id":null,"error":{"code":-32603,"message":"upstream error: %s"}}`, err.Error())
+			outputMu.Lock()
+			fmt.Println(errResp)
+			outputMu.Unlock()
+			continue
+		}
+
+		// Rewrite each response line.
+		for _, resp := range responses {
+			rewritten := rewriteResponse(resp, rewriter, &outputMu, &tokenMu, activeTokens, toolNames)
+			outputMu.Lock()
+			fmt.Println(rewritten)
+			outputMu.Unlock()
+		}
+	}
+
+	stats.WriteSummary(os.Stderr)
 }
 
 func fatal(format string, args ...interface{}) {

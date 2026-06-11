@@ -1,5 +1,13 @@
 # Changelog
 
+## v0.6.0
+
+- **HTTP backend**: `--upstream http://host:3000/mcp` connects to remote MCP servers over Streamable HTTP
+- Supports both JSON and SSE responses from upstream
+- Session ID tracking via `Mcp-Session-Id` header
+- Same bidirectional GCF translation as stdio mode
+- MCP config: `{"command": "gcf-proxy", "args": ["--upstream", "http://host:3000/mcp"]}`
+
 ## v0.5.0
 
 - **Bidirectional GCF proxy**: tool call arguments containing GCF strings are automatically decoded to JSON before forwarding to the upstream server. The LLM can now produce GCF output (63% fewer output tokens) while the server receives JSON unchanged.

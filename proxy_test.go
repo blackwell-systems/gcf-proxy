@@ -2,6 +2,10 @@ package main
 
 import (
 	"encoding/json"
+	"fmt"
+	"io"
+	"net/http"
+	"net/http/httptest"
 	"strings"
 	"sync"
 	"testing"
@@ -241,6 +245,92 @@ func TestDecodeRequestGCF_MixedArgs(t *testing.T) {
 	}
 	if !strings.Contains(result, `"Alice"`) {
 		t.Errorf("expected decoded tabular data with Alice")
+	}
+}
+
+func TestHTTPBackend_JSONResponse(t *testing.T) {
+	// Mock HTTP server that returns a JSON-RPC response.
+	handler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		body, _ := io.ReadAll(r.Body)
+		var msg map[string]any
+		json.Unmarshal(body, &msg)
+
+		w.Header().Set("Content-Type", "application/json")
+		w.Header().Set("Mcp-Session-Id", "test-session-123")
+		resp := `{"jsonrpc":"2.0","id":1,"result":{"content":[{"type":"text","text":"{\"employees\":[{\"id\":1,\"name\":\"Alice\"},{\"id\":2,\"name\":\"Bob\"}]}"}]}}`
+		w.Write([]byte(resp))
+	})
+	server := httptest.NewServer(handler)
+	defer server.Close()
+
+	backend := NewHTTPBackend(server.URL)
+	lines, err := backend.Send(`{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"list"}}`)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(lines) != 1 {
+		t.Fatalf("expected 1 response line, got %d", len(lines))
+	}
+	if !strings.Contains(lines[0], "employees") {
+		t.Errorf("expected employees in response, got: %s", lines[0])
+	}
+	// Session ID should be captured.
+	if backend.sessionID != "test-session-123" {
+		t.Errorf("expected session ID 'test-session-123', got %q", backend.sessionID)
+	}
+}
+
+func TestHTTPBackend_SSEResponse(t *testing.T) {
+	// Mock HTTP server that returns SSE stream.
+	handler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "text/event-stream")
+		w.WriteHeader(200)
+		// Two events: a progress notification and a final result.
+		fmt.Fprint(w, "data: {\"jsonrpc\":\"2.0\",\"method\":\"notifications/progress\",\"params\":{\"progress\":1,\"total\":2}}\n\n")
+		fmt.Fprint(w, "data: {\"jsonrpc\":\"2.0\",\"id\":1,\"result\":{\"content\":[{\"type\":\"text\",\"text\":\"done\"}]}}\n\n")
+	})
+	server := httptest.NewServer(handler)
+	defer server.Close()
+
+	backend := NewHTTPBackend(server.URL)
+	lines, err := backend.Send(`{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{}}`)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(lines) != 2 {
+		t.Fatalf("expected 2 SSE events, got %d: %v", len(lines), lines)
+	}
+	if !strings.Contains(lines[0], "progress") {
+		t.Errorf("expected progress notification, got: %s", lines[0])
+	}
+	if !strings.Contains(lines[1], "done") {
+		t.Errorf("expected final result, got: %s", lines[1])
+	}
+}
+
+func TestHTTPBackend_RewritesResponse(t *testing.T) {
+	// Mock server returns a graph payload as JSON.
+	handler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		resp := `{"jsonrpc":"2.0","id":1,"result":{"content":[{"type":"text","text":"{\"tool\":\"test\",\"tokensUsed\":50,\"tokenBudget\":500,\"symbols\":[{\"qualifiedName\":\"a.A\",\"kind\":\"function\",\"score\":0.9,\"provenance\":\"lsp\",\"distance\":0}],\"edges\":[]}"}]}}`
+		w.Write([]byte(resp))
+	})
+	server := httptest.NewServer(handler)
+	defer server.Close()
+
+	backend := NewHTTPBackend(server.URL)
+	rw := NewRewriter(RewriterConfig{StreamThreshold: 5})
+
+	lines, _ := backend.Send(`{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"test"}}`)
+
+	// Rewrite the response (same as the stdio path).
+	var outputMu, tokenMu sync.Mutex
+	tokens := make(map[string]json.RawMessage)
+	names := make(map[string]string)
+
+	rewritten := rewriteResponse(lines[0], rw, &outputMu, &tokenMu, tokens, names)
+	if !strings.Contains(rewritten, "GCF profile=graph") {
+		t.Errorf("expected GCF rewrite, got: %s", rewritten[:min(len(rewritten), 200)])
 	}
 }
 
