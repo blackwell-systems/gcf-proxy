@@ -8,12 +8,13 @@ import (
 	gcf "github.com/blackwell-systems/gcf-go"
 )
 
-// RewriterConfig controls streaming behavior.
+// RewriterConfig controls streaming and session behavior.
 type RewriterConfig struct {
-	StreamThreshold int    // Min symbols before triggering incremental mode (default 5)
-	EnableProgress  bool   // Whether to emit progress notifications
-	Stats           *Stats // Optional stats tracker
-	Verbose         bool   // Log per-call savings to stderr
+	StreamThreshold int          // Min symbols before triggering incremental mode (default 5)
+	EnableProgress  bool         // Whether to emit progress notifications
+	Stats           *Stats       // Optional stats tracker
+	Verbose         bool         // Log per-call savings to stderr
+	Session         *gcf.Session // Optional session for cross-call dedup (nil = disabled)
 }
 
 // ProgressFunc is called with partial GCF output and progress info.
@@ -47,7 +48,32 @@ func NewRewriter(config RewriterConfig) *Rewriter {
 // incremental GCF fragments via the callback.
 func (r *Rewriter) RewriteToolResult(text string, progressFn ProgressFunc) RewriteResult {
 	trimmed := strings.TrimSpace(text)
-	if len(trimmed) == 0 || (trimmed[0] != '{' && trimmed[0] != '[') {
+	if len(trimmed) == 0 {
+		return RewriteResult{Original: text}
+	}
+
+	// GCF-in: if the upstream already produces GCF graph profile and we have
+	// a session, decode it, re-encode with session dedup (bare refs for
+	// previously-transmitted symbols).
+	if strings.HasPrefix(trimmed, "GCF profile=graph") && r.config.Session != nil {
+		p, err := gcf.Decode(trimmed)
+		if err == nil && p != nil {
+			encoded := gcf.EncodeWithSession(p, r.config.Session)
+			if r.config.Stats != nil {
+				r.config.Stats.Record(len(trimmed), len(encoded), len(p.Symbols), len(p.Edges))
+			}
+			return RewriteResult{
+				Original:    text,
+				Rewritten:   encoded,
+				Converted:   true,
+				SymbolCount: len(p.Symbols),
+				EdgeCount:   len(p.Edges),
+			}
+		}
+	}
+
+	// Not JSON, not dedup-able GCF: pass through.
+	if trimmed[0] != '{' && trimmed[0] != '[' {
 		return RewriteResult{Original: text}
 	}
 
@@ -210,7 +236,13 @@ func (r *Rewriter) tryGraphProfile(text string, progressFn ProgressFunc) Rewrite
 			Status:   e.Status,
 		})
 	}
-	encoded := gcf.Encode(p)
+	// Use session dedup if available (bare refs for previously-transmitted symbols).
+	var encoded string
+	if r.config.Session != nil {
+		encoded = gcf.EncodeWithSession(p, r.config.Session)
+	} else {
+		encoded = gcf.Encode(p)
+	}
 	if r.config.Stats != nil {
 		r.config.Stats.Record(len(text), len(encoded), len(p.Symbols), len(p.Edges))
 	}
