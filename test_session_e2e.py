@@ -35,14 +35,16 @@ def tool_call(id, name, args):
 CALLS = [
     # Call 1: blast_radius on generic.ts (baseline)
     ("blast_radius", {"changed_files": [os.path.join(WORKSPACE, "src/generic.ts")]}),
-    # Call 2: same file again (should be 100% bare refs)
+    # Call 2: same file again (tests session dedup: should be bare refs)
     ("blast_radius", {"changed_files": [os.path.join(WORKSPACE, "src/generic.ts")]}),
-    # Call 3: scalar.ts (generic.ts callers likely reference scalar functions too)
+    # Call 3: scalar.ts (some overlap with call 1)
     ("blast_radius", {"changed_files": [os.path.join(WORKSPACE, "src/scalar.ts")]}),
-    # Call 4: generic.ts again (still all bare refs from call 1)
+    # Call 4: generic.ts again (tests cache: identical upstream response to call 2)
     ("blast_radius", {"changed_files": [os.path.join(WORKSPACE, "src/generic.ts")]}),
     # Call 5: both files (mix of known and new)
     ("blast_radius", {"changed_files": [os.path.join(WORKSPACE, "src/generic.ts"), os.path.join(WORKSPACE, "src/scalar.ts")]}),
+    # Call 6: list_symbols on a small file (tests min-size bypass if response < 100 bytes)
+    ("list_symbols", {"file_path": os.path.join(WORKSPACE, "src/constants.ts")}),
 ]
 
 def run():
@@ -53,7 +55,7 @@ def run():
     env["GOWORK"] = "off"  # Prevent broken parent go.work from poisoning gopls
 
     proc = subprocess.Popen(
-        [PROXY, "--session", "--verbose", "agent-lsp"],
+        [PROXY, "--session", "--cache", "--min-size", "100", "--verbose", "agent-lsp"],
         stdin=subprocess.PIPE,
         stdout=subprocess.PIPE,
         stderr=subprocess.PIPE,
@@ -135,8 +137,13 @@ def run():
     results = []
     for i, (tool, args) in enumerate(CALLS):
         call_id = i + 10
-        files = [f.split("/")[-1] for f in args.get("changed_files", [])]
-        print(f"Call {i+1}: {tool}({', '.join(files)})")
+        if "changed_files" in args:
+            label = ', '.join(f.split("/")[-1] for f in args["changed_files"])
+        elif "file_path" in args:
+            label = args["file_path"].split("/")[-1]
+        else:
+            label = str(args)[:40]
+        print(f"Call {i+1}: {tool}({label})")
 
         send(tool_call(call_id, tool, args))
         resp = recv(timeout=30)
@@ -186,9 +193,23 @@ def run():
         print(f"  {i+1:<6} {size:>8} {bare:>10} {savings:>12} {'yes' if is_gcf else 'no':>5}")
 
     print(f"\n=== Proxy verbose output ===")
+    cache_hits = 0
+    min_size_bypasses = 0
     for line in stderr.strip().split("\n"):
-        if "gcf-proxy:" in line or "session" in line.lower() or "---" in line or "Tool calls" in line or "saved" in line or "Bytes" in line or "tokens" in line:
+        if "cache hit" in line.lower():
+            cache_hits += 1
+        if "gcf-proxy:" in line or "session" in line.lower() or "---" in line or "Tool calls" in line or "saved" in line or "Bytes" in line or "tokens" in line or "cache" in line.lower() or "Cache" in line:
             print(f"  {line}")
+
+    # Count min-size bypasses (responses that weren't converted)
+    for size, bare, is_gcf in results:
+        if size > 0 and size < 100 and not is_gcf:
+            min_size_bypasses += 1
+
+    print(f"\n=== Feature verification ===")
+    print(f"  Session dedup: {'PASS' if any(b > 0 for _, b, _ in results) else 'NO BARE REFS'}")
+    print(f"  Cache hits: {cache_hits} {'(PASS)' if cache_hits > 0 else '(none detected)'}")
+    print(f"  Min-size bypasses: {min_size_bypasses} {'(PASS)' if min_size_bypasses > 0 else '(none detected)'}")
 
 if __name__ == "__main__":
     run()
