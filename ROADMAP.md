@@ -58,7 +58,7 @@ HTTP Client  ──POST──▶  Proxy (:9090)  ──stdin──▶  Upstream 
 
 ---
 
-## Phase 3: HTTP Backend ✓ DONE (session dedup planned)
+## Phase 3: HTTP Backend ✓ DONE
 
 The proxy connects to upstream servers over HTTP (not just stdio subprocess).
 
@@ -68,13 +68,6 @@ The proxy connects to upstream servers over HTTP (not just stdio subprocess).
 - `Mcp-Session-Id` header tracking (captured from upstream, sent on subsequent requests)
 - Same bidirectional GCF translation as stdio mode
 
-**Remaining (session dedup):**
-- `session.go`: cross-request `gcf.Session` state management
-- `--session`: enable session deduplication (previously-transmitted symbols become bare refs)
-- Session scoped to `Mcp-Session-Id` (HTTP) or process lifetime (stdio)
-
-**Use case:** The proxy sits between a client and a remote MCP server. The upstream server retransmits full payloads every call. The proxy tracks what's been sent and replaces known symbols with bare references, delivering session savings (92.7% by 5th call) without any upstream code changes.
-
 **Architecture:**
 ```
 Client  ──▶  Proxy  ──HTTP POST──▶  Remote MCP Server
@@ -83,7 +76,30 @@ Client  ──▶  Proxy  ──HTTP POST──▶  Remote MCP Server
 
 ---
 
-## Phase 4: Production Hardening
+## Phase 4: Session Dedup ✓ DONE
+
+Cross-call session deduplication for graph payloads. Previously-transmitted symbols become bare references on subsequent calls.
+
+**Shipped:**
+- `--session`: enable session dedup (persists for proxy lifetime)
+- GCF-in path: decode upstream GCF, re-encode with session bare refs
+- JSON-in path: encode JSON as GCF with session tracking
+- Proven end-to-end with agent-lsp on real TypeScript codebase
+
+**Results (5 sequential blast_radius calls):**
+```
+Call 1: 5,730 bytes (94 symbols, baseline)
+Call 2: 3,450 bytes (94 bare refs, 40% saved)
+Call 3: 4,887 bytes (18 bare refs, 15% saved)
+Call 4: 3,450 bytes (94 bare refs, 40% saved)
+Call 5: 6,335 bytes (175 bare refs, 41% saved)
+```
+
+**Use case:** The proxy sits between a client and any MCP server (local or remote). The server retransmits full payloads every call. The proxy tracks what's been sent and replaces known symbols with bare references. Zero server changes required.
+
+---
+
+## Phase 5: Production Hardening
 
 Polish for production deployment.
 
@@ -100,9 +116,11 @@ Polish for production deployment.
 
 ## Mode Matrix
 
-| Frontend | Backend | Command |
-|----------|---------|---------|
-| stdio | stdio subprocess | `gcf-proxy server-binary` (Phase 1, current) |
-| HTTP/SSE | stdio subprocess | `gcf-proxy --http :9090 server-binary` (Phase 2) |
-| stdio | HTTP upstream | `gcf-proxy --upstream http://host/mcp` (Phase 3) |
-| HTTP/SSE | HTTP upstream | `gcf-proxy --http :9090 --upstream http://host/mcp` (Phase 3) |
+| Frontend | Backend | Session | Command |
+|----------|---------|---------|---------|
+| stdio | stdio subprocess | off | `gcf-proxy server-binary` |
+| stdio | stdio subprocess | on | `gcf-proxy --session server-binary` |
+| stdio | HTTP upstream | off | `gcf-proxy --upstream http://host/mcp` |
+| stdio | HTTP upstream | on | `gcf-proxy --session --upstream http://host/mcp` |
+| HTTP/SSE | stdio subprocess | on | `gcf-proxy --http :9090 --session server-binary` (Phase 5) |
+| HTTP/SSE | HTTP upstream | on | `gcf-proxy --http :9090 --session --upstream http://host/mcp` (Phase 5) |
