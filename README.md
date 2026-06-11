@@ -6,9 +6,9 @@
 
 # gcf-proxy
 
-**MCP proxy that re-encodes JSON tool responses as GCF. Drop-in, zero changes to your server.**
+**Bidirectional MCP proxy that translates between JSON and GCF. Drop-in, zero changes to your server or client.**
 
-79% fewer tokens than JSON. 90.7% comprehension accuracy where JSON averages 53.6% ([1,300+ evals, 10 models, 3 providers](https://gcformat.com/guide/benchmarks.html)). One line change in your MCP config.
+79% fewer input tokens. 63% fewer output tokens. 90.7% comprehension accuracy where JSON averages 53.6% ([1,300+ evals, 10 models, 3 providers](https://gcformat.com/guide/benchmarks.html)). One line change in your MCP config.
 
 ## Install
 
@@ -57,35 +57,38 @@ Add `gcf-proxy` in front of any MCP server command in your config:
 }
 ```
 
-Your server keeps outputting JSON. The LLM receives GCF. Nothing else changes.
+Your server keeps outputting JSON. The LLM receives GCF. If the LLM produces GCF in tool call arguments, the server receives JSON. Neither side needs to change.
 
-### Before (your server outputs JSON, 12,000 tokens):
-
-```json
-{"tool":"context_for_task","symbols":[{"qualified_name":"pkg.Auth","kind":"function","score":0.78,...},...]}
-```
-
-### After (LLM receives GCF, 1,900 tokens):
+### Responses: Server (JSON) -> LLM (GCF)
 
 ```
-GCF tool=context_for_task budget=5000 tokens=1900 symbols=50 edges=20
-## targets
-@0 fn pkg.Auth 0.78 lsp_resolved
-...
-## edges [20]
-@0<@1 calls
+Before: {"tool":"context_for_task","symbols":[{"qualified_name":"pkg.Auth","kind":"function","score":0.78,...},...]}
+After:  GCF profile=graph tool=context_for_task budget=5000 tokens=1900 symbols=50 edges=20
+        ## targets
+        @0 fn pkg.Auth 0.78 lsp_resolved
+        ...
 ```
+
+79% fewer input tokens.
+
+### Requests: LLM (GCF) -> Server (JSON)
+
+If the LLM produces GCF in a tool call argument (63% fewer output tokens), the proxy decodes it to JSON before forwarding:
+
+```
+LLM sends:    {"tool": "process", "arguments": {"data": "GCF profile=generic\nname=Alice\nage=30\n"}}
+Server gets:  {"tool": "process", "arguments": {"data": {"name": "Alice", "age": 30}}}
+```
+
+Detection is a 4-byte prefix check (`GCF `). Zero overhead. Non-GCF strings pass through untouched.
 
 ## How it works
 
 1. Spawns your MCP server as a subprocess
 2. Proxies stdin/stdout between client and server
-3. Intercepts JSON-RPC responses containing tool results
-4. Detects JSON payloads with `tool` + `symbols` fields
-5. Re-encodes them as GCF
-6. Passes everything else through unchanged
-
-Non-convertible responses (plain text, HTML, errors) pass through untouched.
+3. **Responses**: intercepts JSON-RPC responses, re-encodes structured JSON as GCF
+4. **Requests**: scans tool call arguments for GCF strings, decodes to JSON
+5. Passes everything else through unchanged in both directions
 
 ## Why not modify the server?
 
@@ -95,7 +98,7 @@ If you control the server, use the [GCF libraries](https://github.com/blackwell-
 
 ## Benchmarks
 
-GCF achieves 100% comprehension accuracy at 500 symbols where JSON scores 76.9% and TOON scores 92.3%. On TOON's own benchmark, GCF wins all 6 datasets.
+90.7% comprehension accuracy across 10 models where TOON averages 68.5% and JSON averages 53.6%. On TOON's own benchmark, GCF wins all 6 datasets.
 
 | Format | Accuracy | Tokens | vs JSON |
 |--------|----------|--------|---------|

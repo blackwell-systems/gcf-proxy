@@ -17,7 +17,7 @@ The proxy emits GCF fragments as MCP progress notifications while encoding large
 2. Upstream server returns JSON with `tool` + `symbols` fields
 3. Proxy uses `StreamEncoder` to encode incrementally (batch size = threshold)
 4. Each batch emits a progress notification with GCF fragment in `message`
-5. Final response contains the complete GCF payload with `## _summary`
+5. Final response contains the complete GCF payload with `##! summary`
 
 Without `progressToken`: behaves exactly as before (backward compatible).
 
