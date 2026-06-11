@@ -1,5 +1,11 @@
 # Changelog
 
+## v0.7.0
+
+- **Session dedup** (`--session`): cross-call deduplication for graph payloads. Previously-transmitted symbols become bare references on subsequent calls. Proven end-to-end with agent-lsp: 40% savings on repeated queries, compounding across a session.
+- Works on both JSON-in (encode with session) and GCF-in (decode, re-encode with session)
+- Session state persists for the proxy's lifetime (scoped to one conversation)
+
 ## v0.6.0
 
 - **HTTP backend**: `--upstream http://host:3000/mcp` connects to remote MCP servers over Streamable HTTP

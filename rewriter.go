@@ -3,6 +3,8 @@ package main
 import (
 	"bytes"
 	"encoding/json"
+	"fmt"
+	"os"
 	"strings"
 
 	gcf "github.com/blackwell-systems/gcf-go"
@@ -55,10 +57,22 @@ func (r *Rewriter) RewriteToolResult(text string, progressFn ProgressFunc) Rewri
 	// GCF-in: if the upstream already produces GCF graph profile and we have
 	// a session, decode it, re-encode with session dedup (bare refs for
 	// previously-transmitted symbols).
+	if r.config.Verbose && strings.HasPrefix(trimmed, "GCF") {
+		fmt.Fprintf(os.Stderr, "gcf-proxy: GCF-in detected, first 60 chars: %q, session=%v\n", trimmed[:min(60, len(trimmed))], r.config.Session != nil)
+	}
 	if strings.HasPrefix(trimmed, "GCF profile=graph") && r.config.Session != nil {
 		p, err := gcf.Decode(trimmed)
+		if err != nil && r.config.Verbose {
+			fmt.Fprintf(os.Stderr, "gcf-proxy: GCF decode failed: %v\n", err)
+		}
 		if err == nil && p != nil {
+			if r.config.Verbose {
+				fmt.Fprintf(os.Stderr, "gcf-proxy: decoded %d symbols, session size before: %d\n", len(p.Symbols), r.config.Session.Size())
+			}
 			encoded := gcf.EncodeWithSession(p, r.config.Session)
+			if r.config.Verbose {
+				fmt.Fprintf(os.Stderr, "gcf-proxy: session size after: %d, bare refs in output: %d\n", r.config.Session.Size(), strings.Count(encoded, "previously transmitted"))
+			}
 			if r.config.Stats != nil {
 				r.config.Stats.Record(len(trimmed), len(encoded), len(p.Symbols), len(p.Edges))
 			}

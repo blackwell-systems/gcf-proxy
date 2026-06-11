@@ -13,6 +13,7 @@ type Stats struct {
 	GCFBytes    atomic.Int64
 	Symbols     atomic.Int64
 	Edges       atomic.Int64
+	SessionDedup bool // whether session dedup is active
 }
 
 // Record adds a single conversion result to the running totals.

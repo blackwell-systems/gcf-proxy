@@ -16,7 +16,7 @@ import sys
 import os
 import time
 
-WORKSPACE = sys.argv[1] if len(sys.argv) > 1 else os.path.expanduser("~/code/gcf-proxy")
+WORKSPACE = sys.argv[1] if len(sys.argv) > 1 else os.path.expanduser("~/code/gcf-typescript")
 PROXY = "/tmp/gcf-proxy-session"
 
 def jsonrpc(id, method, params):
@@ -33,16 +33,23 @@ def tool_call(id, name, args):
 
 # Tool calls that explore overlapping code areas in gcf-go
 CALLS = [
-    ("blast_radius", {"changed_files": [os.path.join(WORKSPACE, "main.go")]}),
-    ("blast_radius", {"changed_files": [os.path.join(WORKSPACE, "rewriter.go")]}),
-    ("blast_radius", {"changed_files": [os.path.join(WORKSPACE, "stats.go")]}),
-    ("blast_radius", {"changed_files": [os.path.join(WORKSPACE, "jsonrpc.go")]}),
-    ("blast_radius", {"changed_files": [os.path.join(WORKSPACE, "main.go"), os.path.join(WORKSPACE, "rewriter.go")]}),
+    # Call 1: blast_radius on generic.ts (baseline)
+    ("blast_radius", {"changed_files": [os.path.join(WORKSPACE, "src/generic.ts")]}),
+    # Call 2: same file again (should be 100% bare refs)
+    ("blast_radius", {"changed_files": [os.path.join(WORKSPACE, "src/generic.ts")]}),
+    # Call 3: scalar.ts (generic.ts callers likely reference scalar functions too)
+    ("blast_radius", {"changed_files": [os.path.join(WORKSPACE, "src/scalar.ts")]}),
+    # Call 4: generic.ts again (still all bare refs from call 1)
+    ("blast_radius", {"changed_files": [os.path.join(WORKSPACE, "src/generic.ts")]}),
+    # Call 5: both files (mix of known and new)
+    ("blast_radius", {"changed_files": [os.path.join(WORKSPACE, "src/generic.ts"), os.path.join(WORKSPACE, "src/scalar.ts")]}),
 ]
 
 def run():
     env = os.environ.copy()
-    env["AGENT_LSP_OUTPUT_FORMAT"] = "json"
+    # Let agent-lsp produce GCF natively. The proxy's GCF-in path decodes
+    # and re-encodes with session dedup (bare refs for known symbols).
+    env.pop("AGENT_LSP_OUTPUT_FORMAT", None)
     env["GOWORK"] = "off"  # Prevent broken parent go.work from poisoning gopls
 
     proc = subprocess.Popen(
@@ -102,7 +109,11 @@ def run():
 
     # Start LSP and add workspace
     print(f"  Starting LSP for: {WORKSPACE}")
-    send(tool_call(2, "start_lsp", {"root_dir": WORKSPACE, "ready_timeout_seconds": 30}))
+    start_args = {"root_dir": WORKSPACE, "ready_timeout_seconds": 30}
+    # Auto-detect language from workspace
+    if "typescript" in WORKSPACE:
+        start_args["language_id"] = "typescript"
+    send(tool_call(2, "start_lsp", start_args))
     resp = recv(timeout=60)
     if resp:
         content = resp.get("result", {}).get("content", [])

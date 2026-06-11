@@ -26,6 +26,8 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+
+	gcf "github.com/blackwell-systems/gcf-go"
 	"syscall"
 )
 
@@ -41,6 +43,7 @@ Usage:
 
 Flags:
   --upstream <url>       Connect to a remote MCP server over HTTP instead of spawning a subprocess
+  --session              Enable session dedup (bare refs for previously-transmitted symbols)
   --stream-threshold N   Min symbols before streaming mode activates (default: 5)
   --no-progress          Disable progress notifications
   --verbose              Log per-call savings to stderr
@@ -76,6 +79,7 @@ Version: %s
 	enableProgress := true
 	verbose := false
 	upstreamURL := ""
+	enableSession := false
 	args := os.Args[1:]
 
 	for len(args) > 0 {
@@ -94,6 +98,9 @@ Version: %s
 		case args[0] == "--upstream" && len(args) > 1:
 			upstreamURL = args[1]
 			args = args[2:]
+		case args[0] == "--session":
+			enableSession = true
+			args = args[1:]
 		default:
 			goto done
 		}
@@ -101,12 +108,19 @@ Version: %s
 done:
 
 	stats := &Stats{}
-	rewriter := NewRewriter(RewriterConfig{
+	config := RewriterConfig{
 		StreamThreshold: streamThreshold,
 		EnableProgress:  enableProgress,
 		Stats:           stats,
 		Verbose:         verbose,
-	})
+	}
+	if enableSession {
+		config.Session = gcf.NewSession()
+		if verbose {
+			fmt.Fprintf(os.Stderr, "gcf-proxy: session dedup enabled\n")
+		}
+	}
+	rewriter := NewRewriter(config)
 
 	// HTTP backend mode: connect to remote MCP server.
 	if upstreamURL != "" {

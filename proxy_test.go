@@ -334,6 +334,135 @@ func TestHTTPBackend_RewritesResponse(t *testing.T) {
 	}
 }
 
+func TestSessionDedup_BareRefsOnSecondCall(t *testing.T) {
+	sess := gcf.NewSession()
+	rw := NewRewriter(RewriterConfig{StreamThreshold: 100, Session: sess})
+
+	// First call: 3 symbols with realistic qualified names.
+	payload1 := `{"tool":"test","tokensUsed":100,"tokenBudget":1000,"symbols":[{"qualifiedName":"github.com/org/repo/internal/auth.Middleware","kind":"function","score":0.9,"provenance":"lsp_resolved","distance":0},{"qualifiedName":"github.com/org/repo/internal/auth.ValidateToken","kind":"type","score":0.8,"provenance":"lsp_resolved","distance":0},{"qualifiedName":"github.com/org/repo/internal/server.NewServer","kind":"method","score":0.7,"provenance":"lsp_resolved","distance":1}],"edges":[]}`
+	r1 := rw.RewriteToolResult(payload1, nil)
+	if !r1.Converted {
+		t.Fatal("expected conversion on call 1")
+	}
+	if strings.Contains(r1.Rewritten, "previously transmitted") {
+		t.Error("call 1 should have no bare refs")
+	}
+	if !strings.Contains(r1.Rewritten, "session=true") {
+		t.Error("call 1 should have session=true header")
+	}
+
+	// Second call: same 3 symbols + 1 new.
+	payload2 := `{"tool":"test","tokensUsed":100,"tokenBudget":1000,"symbols":[{"qualifiedName":"github.com/org/repo/internal/auth.Middleware","kind":"function","score":0.9,"provenance":"lsp_resolved","distance":0},{"qualifiedName":"github.com/org/repo/internal/auth.ValidateToken","kind":"type","score":0.8,"provenance":"lsp_resolved","distance":0},{"qualifiedName":"github.com/org/repo/internal/server.NewServer","kind":"method","score":0.7,"provenance":"lsp_resolved","distance":1},{"qualifiedName":"github.com/org/repo/internal/handler.ProcessRequest","kind":"function","score":0.6,"provenance":"lsp_resolved","distance":1}],"edges":[]}`
+	r2 := rw.RewriteToolResult(payload2, nil)
+	if !r2.Converted {
+		t.Fatal("expected conversion on call 2")
+	}
+
+	// Should have bare refs for pkg.A, pkg.B, pkg.C.
+	bareCount := strings.Count(r2.Rewritten, "previously transmitted")
+	if bareCount != 3 {
+		t.Errorf("expected 3 bare refs on call 2, got %d\noutput:\n%s", bareCount, r2.Rewritten)
+	}
+
+	// Should have full declaration for the new symbol.
+	if !strings.Contains(r2.Rewritten, "fn github.com/org/repo/internal/handler.ProcessRequest") {
+		t.Errorf("expected full declaration for ProcessRequest on call 2\noutput:\n%s", r2.Rewritten)
+	}
+
+	// Call 2 should be smaller than call 1.
+	if len(r2.Rewritten) >= len(r1.Rewritten) {
+		t.Errorf("call 2 (%d bytes) should be smaller than call 1 (%d bytes) due to dedup",
+			len(r2.Rewritten), len(r1.Rewritten))
+	}
+}
+
+func TestSessionDedup_NoSessionNoBareRefs(t *testing.T) {
+	// Without --session, no bare refs even on repeated calls.
+	rw := NewRewriter(RewriterConfig{StreamThreshold: 100})
+
+	payload := `{"tool":"test","tokensUsed":100,"tokenBudget":1000,"symbols":[{"qualifiedName":"pkg.A","kind":"function","score":0.9,"provenance":"lsp","distance":0}],"edges":[]}`
+
+	r1 := rw.RewriteToolResult(payload, nil)
+	r2 := rw.RewriteToolResult(payload, nil)
+
+	if strings.Contains(r1.Rewritten, "session=true") {
+		t.Error("no session flag should mean no session=true header")
+	}
+	if strings.Contains(r2.Rewritten, "previously transmitted") {
+		t.Error("no session flag should mean no bare refs")
+	}
+}
+
+func TestSessionDedup_CompoundingSavings(t *testing.T) {
+	sess := gcf.NewSession()
+	rw := NewRewriter(RewriterConfig{StreamThreshold: 100, Session: sess})
+
+	// Build a 10-symbol payload.
+	symbols := make([]map[string]any, 10)
+	for i := 0; i < 10; i++ {
+		symbols[i] = map[string]any{
+			"qualifiedName": fmt.Sprintf("github.com/org/repo/pkg.Symbol%d", i),
+			"kind": "function", "score": 0.9 - float64(i)*0.05, "provenance": "lsp", "distance": i / 4,
+		}
+	}
+	edges := []map[string]any{
+		{"source": "github.com/org/repo/pkg.Symbol1", "target": "github.com/org/repo/pkg.Symbol0", "edgeType": "calls"},
+		{"source": "github.com/org/repo/pkg.Symbol2", "target": "github.com/org/repo/pkg.Symbol0", "edgeType": "references"},
+	}
+	payload := map[string]any{
+		"tool": "test", "tokensUsed": 200, "tokenBudget": 2000,
+		"symbols": symbols, "edges": edges,
+	}
+	payloadJSON, _ := json.Marshal(payload)
+
+	// Call 1: all new.
+	r1 := rw.RewriteToolResult(string(payloadJSON), nil)
+
+	// Call 2: same payload, all symbols become bare refs.
+	r2 := rw.RewriteToolResult(string(payloadJSON), nil)
+
+	// Call 3: add 2 new symbols, 10 old become bare refs.
+	symbols3 := append(symbols, map[string]any{
+		"qualifiedName": "github.com/org/repo/pkg.New1",
+		"kind": "type", "score": 0.3, "provenance": "ast", "distance": 2,
+	}, map[string]any{
+		"qualifiedName": "github.com/org/repo/pkg.New2",
+		"kind": "method", "score": 0.25, "provenance": "ast", "distance": 2,
+	})
+	payload3 := map[string]any{
+		"tool": "test", "tokensUsed": 250, "tokenBudget": 2000,
+		"symbols": symbols3, "edges": edges,
+	}
+	payload3JSON, _ := json.Marshal(payload3)
+	r3 := rw.RewriteToolResult(string(payload3JSON), nil)
+
+	// Verify compounding savings.
+	t.Logf("Call 1: %d bytes (all new)", len(r1.Rewritten))
+	t.Logf("Call 2: %d bytes (all bare refs)", len(r2.Rewritten))
+	t.Logf("Call 3: %d bytes (10 bare + 2 new)", len(r3.Rewritten))
+
+	if len(r2.Rewritten) >= len(r1.Rewritten) {
+		t.Errorf("call 2 should be smaller than call 1")
+	}
+	if len(r3.Rewritten) >= len(r1.Rewritten) {
+		t.Errorf("call 3 should be smaller than call 1")
+	}
+
+	// Call 2 should have 10 bare refs.
+	if c := strings.Count(r2.Rewritten, "previously transmitted"); c != 10 {
+		t.Errorf("call 2: expected 10 bare refs, got %d", c)
+	}
+
+	// Call 3 should have 10 bare refs + 2 new.
+	if c := strings.Count(r3.Rewritten, "previously transmitted"); c != 10 {
+		t.Errorf("call 3: expected 10 bare refs, got %d", c)
+	}
+
+	savings2 := 100.0 * (1.0 - float64(len(r2.Rewritten))/float64(len(r1.Rewritten)))
+	savings3 := 100.0 * (1.0 - float64(len(r3.Rewritten))/float64(len(r1.Rewritten)))
+	t.Logf("Savings: call 2 = %.0f%%, call 3 = %.0f%%", savings2, savings3)
+}
+
 func TestRewriter_V2GraphHeader(t *testing.T) {
 	rw := NewRewriter(RewriterConfig{StreamThreshold: 5})
 	payload := `{"tool":"test","tokensUsed":50,"tokenBudget":500,"symbols":[{"qualifiedName":"a.A","kind":"function","score":0.9,"provenance":"lsp","distance":0}],"edges":[]}`
