@@ -60,8 +60,9 @@ func (r *Rewriter) RewriteToolResult(text string, progressFn ProgressFunc) Rewri
 	}
 
 	// Fall back to generic profile (any structured JSON, including arrays).
-	var generic any
-	if err := json.Unmarshal([]byte(trimmed), &generic); err != nil {
+	// Use ParseJSONOrdered to preserve key insertion order from the source JSON.
+	generic, err := gcf.ParseJSONOrdered([]byte(trimmed))
+	if err != nil {
 		return RewriteResult{Original: text}
 	}
 	encoded := gcf.EncodeGeneric(generic)
@@ -72,6 +73,79 @@ func (r *Rewriter) RewriteToolResult(text string, progressFn ProgressFunc) Rewri
 		r.config.Stats.Record(len(trimmed), len(encoded), 0, 0)
 	}
 	return RewriteResult{Original: text, Rewritten: encoded, Converted: true}
+}
+
+// decodeRequestGCF scans a JSON-RPC request line for GCF strings in tool call
+// arguments and decodes them to JSON. This enables bidirectional proxying:
+// the LLM can produce GCF output (63% fewer output tokens), and the upstream
+// server receives JSON without modification.
+func decodeRequestGCF(line string) string {
+	trimmed := strings.TrimSpace(line)
+	if len(trimmed) == 0 || trimmed[0] != '{' {
+		return line
+	}
+
+	var msg struct {
+		JSONRPC string          `json:"jsonrpc"`
+		ID      json.RawMessage `json:"id"`
+		Method  string          `json:"method"`
+		Params  json.RawMessage `json:"params"`
+	}
+	if err := json.Unmarshal([]byte(trimmed), &msg); err != nil {
+		return line
+	}
+	if msg.Method != "tools/call" || msg.Params == nil {
+		return line
+	}
+
+	var params struct {
+		Name      string                     `json:"name"`
+		Arguments map[string]json.RawMessage `json:"arguments"`
+		Meta      json.RawMessage            `json:"_meta"`
+	}
+	if err := json.Unmarshal(msg.Params, &params); err != nil {
+		return line
+	}
+
+	modified := false
+	for key, val := range params.Arguments {
+		// Check if the argument value is a string starting with "GCF "
+		var s string
+		if err := json.Unmarshal(val, &s); err != nil {
+			continue
+		}
+		if !strings.HasPrefix(s, "GCF ") {
+			continue
+		}
+
+		// Decode GCF to native value, then re-serialize as JSON.
+		decoded, err := gcf.DecodeGeneric(s)
+		if err != nil {
+			continue
+		}
+		jsonBytes, err := json.Marshal(decoded)
+		if err != nil {
+			continue
+		}
+		// Replace the GCF string with the decoded JSON value (inline, not stringified).
+		params.Arguments[key] = jsonBytes
+		modified = true
+	}
+
+	if !modified {
+		return line
+	}
+
+	// Rebuild the request.
+	paramsBytes, _ := json.Marshal(params)
+	rebuilt := map[string]any{
+		"jsonrpc": msg.JSONRPC,
+		"id":      msg.ID,
+		"method":  msg.Method,
+		"params":  json.RawMessage(paramsBytes),
+	}
+	output, _ := json.Marshal(rebuilt)
+	return string(output)
 }
 
 // tryGraphProfile attempts to parse and encode as a GCF graph payload.

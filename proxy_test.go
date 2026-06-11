@@ -188,6 +188,62 @@ func TestExtractProgressToken(t *testing.T) {
 	}
 }
 
+func TestDecodeRequestGCF_ToolCallWithGCFArg(t *testing.T) {
+	gcfPayload := "GCF profile=generic\nname=Alice\nage=30\n"
+	gcfEscaped, _ := json.Marshal(gcfPayload)
+	request := `{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"process_data","arguments":{"data":` + string(gcfEscaped) + `}}}`
+
+	result := decodeRequestGCF(request)
+
+	// The GCF string should be decoded to a JSON object inline.
+	if strings.Contains(result, "GCF profile=") {
+		t.Errorf("GCF should have been decoded, got:\n%s", result)
+	}
+	if !strings.Contains(result, `"name":"Alice"`) {
+		t.Errorf("expected decoded JSON with name=Alice, got:\n%s", result)
+	}
+	if !strings.Contains(result, `"age":30`) {
+		t.Errorf("expected decoded JSON with age=30, got:\n%s", result)
+	}
+}
+
+func TestDecodeRequestGCF_NonGCFArgUntouched(t *testing.T) {
+	request := `{"jsonrpc":"2.0","id":2,"method":"tools/call","params":{"name":"echo","arguments":{"text":"hello world"}}}`
+
+	result := decodeRequestGCF(request)
+	if result != request {
+		t.Errorf("non-GCF request should pass through unchanged:\n  got:  %s\n  want: %s", result, request)
+	}
+}
+
+func TestDecodeRequestGCF_NonToolCallUntouched(t *testing.T) {
+	request := `{"jsonrpc":"2.0","id":3,"method":"resources/read","params":{"uri":"file:///tmp/test"}}`
+
+	result := decodeRequestGCF(request)
+	if result != request {
+		t.Errorf("non-tools/call request should pass through unchanged")
+	}
+}
+
+func TestDecodeRequestGCF_MixedArgs(t *testing.T) {
+	gcfPayload := "GCF profile=generic\n## items [2]{id,name}\n1|Alice\n2|Bob\n"
+	gcfEscaped, _ := json.Marshal(gcfPayload)
+	request := `{"jsonrpc":"2.0","id":4,"method":"tools/call","params":{"name":"update","arguments":{"path":"/tmp/file.txt","data":` + string(gcfEscaped) + `,"force":true}}}`
+
+	result := decodeRequestGCF(request)
+
+	// GCF arg should be decoded, others untouched.
+	if strings.Contains(result, "GCF profile=") {
+		t.Errorf("GCF should have been decoded")
+	}
+	if !strings.Contains(result, `"/tmp/file.txt"`) {
+		t.Errorf("non-GCF string arg should be preserved")
+	}
+	if !strings.Contains(result, `"Alice"`) {
+		t.Errorf("expected decoded tabular data with Alice")
+	}
+}
+
 func TestRewriter_V2GraphHeader(t *testing.T) {
 	rw := NewRewriter(RewriterConfig{StreamThreshold: 5})
 	payload := `{"tool":"test","tokensUsed":50,"tokenBudget":500,"symbols":[{"qualifiedName":"a.A","kind":"function","score":0.9,"provenance":"lsp","distance":0}],"edges":[]}`
@@ -197,6 +253,30 @@ func TestRewriter_V2GraphHeader(t *testing.T) {
 	}
 	if !strings.HasPrefix(result.Rewritten, "GCF profile=graph ") {
 		t.Errorf("graph output missing v2.0 profile header:\n%s", result.Rewritten)
+	}
+}
+
+func TestRewriter_GenericKeyOrder(t *testing.T) {
+	rw := NewRewriter(RewriterConfig{StreamThreshold: 5})
+	// Keys in JSON insertion order: name, age, active
+	payload := `{"name":"Alice","age":30,"active":true}`
+	result := rw.RewriteToolResult(payload, nil)
+	if !result.Converted {
+		t.Fatal("expected conversion")
+	}
+	// GCF output should preserve key order from JSON (name before age before active)
+	lines := strings.Split(result.Rewritten, "\n")
+	if len(lines) < 4 {
+		t.Fatalf("expected at least 4 lines, got %d:\n%s", len(lines), result.Rewritten)
+	}
+	if lines[1] != "name=Alice" {
+		t.Errorf("expected name=Alice on line 2, got: %s", lines[1])
+	}
+	if lines[2] != "age=30" {
+		t.Errorf("expected age=30 on line 3, got: %s", lines[2])
+	}
+	if lines[3] != "active=true" {
+		t.Errorf("expected active=true on line 4, got: %s", lines[3])
 	}
 }
 

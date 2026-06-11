@@ -1,15 +1,18 @@
-// gcf-proxy is a streaming MCP proxy that re-encodes JSON tool responses as GCF.
+// gcf-proxy is a bidirectional MCP proxy that translates between JSON and GCF.
 //
 // Usage:
 //
 //	gcf-proxy your-mcp-server [args...]
 //
 // It spawns the given MCP server as a subprocess, proxies stdin/stdout,
-// and rewrites JSON content blocks in tool responses to GCF format.
+// and translates in both directions:
+//   - Responses: JSON tool results from the server are encoded as GCF (79% fewer input tokens)
+//   - Requests: GCF strings in tool call arguments are decoded to JSON (63% fewer output tokens)
+//
 // When a progressToken is present, it streams GCF fragments via progress
 // notifications for immediate partial context delivery.
 //
-// Zero changes required to the underlying server.
+// Zero changes required to the underlying server or client.
 package main
 
 import (
@@ -52,9 +55,10 @@ MCP config (after):
   {"mcpServers": {"memory": {"command": "gcf-proxy", "args": ["memory-mcp-server-go"]}}}
 
 Features:
-  - Re-encodes JSON tool responses as GCF (79%% fewer tokens)
+  - Re-encodes JSON tool responses as GCF (79%% fewer input tokens)
+  - Decodes GCF strings in tool call arguments to JSON (63%% fewer output tokens)
   - Streams GCF fragments via progress notifications (immediate partial context)
-  - Zero changes to the upstream server
+  - Bidirectional: neither server nor client needs to know about GCF
 
 Version: %s
 `, version)
@@ -139,6 +143,8 @@ done:
 	toolNames := make(map[string]string)              // request ID -> tool name
 
 	// Proxy client stdin -> server stdin, capturing progress tokens from requests.
+	// Bidirectional: if tool call arguments contain GCF strings, decode them
+	// to JSON so the upstream server never sees GCF.
 	go func() {
 		scanner := bufio.NewScanner(os.Stdin)
 		scanner.Buffer(make([]byte, 0, 10*1024*1024), 10*1024*1024)
@@ -147,6 +153,9 @@ done:
 
 			// Try to extract progressToken and tool name from tool call requests.
 			extractRequestMeta(line, &tokenMu, activeTokens, toolNames)
+
+			// Decode any GCF strings in tool call arguments.
+			line = decodeRequestGCF(line)
 
 			serverStdin.Write([]byte(line))
 			serverStdin.Write([]byte("\n"))

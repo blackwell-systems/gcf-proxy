@@ -1,5 +1,11 @@
 # Changelog
 
+## v0.5.0
+
+- **Bidirectional GCF proxy**: tool call arguments containing GCF strings are automatically decoded to JSON before forwarding to the upstream server. The LLM can now produce GCF output (63% fewer output tokens) while the server receives JSON unchanged.
+- **Key order preservation**: generic profile encoding now preserves JSON key insertion order via `ParseJSONOrdered`
+- Bumped `gcf-go` to v1.0.2
+
 ## v0.4.0
 
 - **GCF v2.0**: bumped `gcf-go` dependency from v0.5.0 to v1.0.0
