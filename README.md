@@ -76,6 +76,16 @@ Point `--upstream` at any Streamable HTTP MCP server:
 
 Supports JSON and SSE responses. Session ID tracking via `Mcp-Session-Id` is automatic.
 
+### Deploy as HTTP service
+
+`--http` turns the proxy into a remote Streamable HTTP server:
+
+```bash
+gcf-proxy --http :9090 --session your-mcp-server
+```
+
+Any MCP client that supports HTTP transport connects directly. Health check at `/health`. Chains with `--upstream` for fully remote deployments.
+
 Both modes are bidirectional: server responses are encoded to GCF, GCF in tool call arguments is decoded to JSON. Neither side needs to change.
 
 ### Responses: Server (JSON) -> LLM (GCF)

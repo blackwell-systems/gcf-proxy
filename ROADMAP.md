@@ -37,23 +37,24 @@ The proxy currently streams graph profile responses via `StreamEncoder` but enco
 
 ---
 
-## Phase 2: HTTP/SSE Frontend
+## Phase 2: HTTP/SSE Frontend ✓ DONE
 
-The proxy becomes a Streamable HTTP server. Any stdio-based MCP server gets upgraded to a remote HTTP service with SSE streaming.
+The proxy serves MCP over Streamable HTTP. Any stdio-based MCP server becomes a remote HTTP service.
 
-**Planned:**
-- `frontend_http.go`: HTTP server with POST handler and SSE response writer
+**Shipped:**
+- `frontend_http.go`: HTTP server with POST handler, SSE response writer, health check
 - `--http :9090`: listen on address as Streamable HTTP MCP endpoint
-- Client POSTs tool call -> proxy forwards to upstream (stdio subprocess) -> proxy streams GCF fragments back as SSE events -> final SSE event contains complete response
-- Session management via `Mcp-Session-Id` header
-- Backward compatible: stdio frontend remains the default
-
-**Use case:** Deploy any existing stdio MCP server as a remote service. Claude Desktop, web clients, and other HTTP-capable MCP clients connect directly. No changes to the upstream server.
+- Chains with `--upstream` for fully remote deployments
+- All features work in HTTP mode: bidirectional translation, session dedup, streaming progress
+- Health check at `/health`
 
 **Architecture:**
 ```
 HTTP Client  ──POST──▶  Proxy (:9090)  ──stdin──▶  Upstream (stdio)
              ◀──SSE───                  ◀──stdout──
+
+HTTP Client  ──POST──▶  Proxy (:9090)  ──HTTP──▶  Remote MCP Server
+             ◀──SSE───                  ◀──JSON──
 ```
 
 ---
@@ -99,7 +100,7 @@ Call 5: 6,335 bytes (175 bare refs, 41% saved)
 
 ---
 
-## Phase 5: Production Hardening
+## Phase 5: Production Hardening (next)
 
 Polish for production deployment.
 
@@ -122,5 +123,5 @@ Polish for production deployment.
 | stdio | stdio subprocess | on | `gcf-proxy --session server-binary` |
 | stdio | HTTP upstream | off | `gcf-proxy --upstream http://host/mcp` |
 | stdio | HTTP upstream | on | `gcf-proxy --session --upstream http://host/mcp` |
-| HTTP/SSE | stdio subprocess | on | `gcf-proxy --http :9090 --session server-binary` (Phase 5) |
-| HTTP/SSE | HTTP upstream | on | `gcf-proxy --http :9090 --session --upstream http://host/mcp` (Phase 5) |
+| HTTP/SSE | stdio subprocess | on | `gcf-proxy --http :9090 --session server-binary` |
+| HTTP/SSE | HTTP upstream | on | `gcf-proxy --http :9090 --session --upstream http://host/mcp` |
