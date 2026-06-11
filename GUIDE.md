@@ -1,6 +1,6 @@
-# MCP Proxy (Zero-Code Adoption)
+# MCP Proxy Guide
 
-gcf-proxy wraps any existing MCP server and re-encodes JSON tool responses as GCF. Your server keeps outputting JSON. The LLM receives GCF. Zero code changes.
+gcf-proxy is a bidirectional proxy that translates between JSON and GCF for any MCP server, local or remote. Neither the server nor the client needs to know about GCF.
 
 ## Install
 
@@ -10,9 +10,9 @@ npm install -g @blackwell-systems/gcf-proxy   # npm
 go install github.com/blackwell-systems/gcf-proxy@latest   # Go
 ```
 
-## Setup (one line change)
+## Setup
 
-Find your MCP config. It's usually in one of these places:
+Find your MCP config:
 
 | Client | Config location |
 |--------|----------------|
@@ -21,20 +21,9 @@ Find your MCP config. It's usually in one of these places:
 | VS Code (Copilot) | `.vscode/mcp.json` |
 | Cursor | `.cursor/mcp.json` |
 
-**Before:**
+### Local server (stdio)
 
-```json
-{
-  "mcpServers": {
-    "my-server": {
-      "command": "my-mcp-server",
-      "args": ["--port", "8080"]
-    }
-  }
-}
-```
-
-**After:**
+Add `gcf-proxy` in front of your server command:
 
 ```json
 {
@@ -47,30 +36,54 @@ Find your MCP config. It's usually in one of these places:
 }
 ```
 
-That's it. The proxy spawns your server as a subprocess and sits between it and the client.
+The proxy spawns your server as a subprocess and pipes stdin/stdout.
 
-## What happens
+### Remote server (HTTP)
+
+Point `--upstream` at any Streamable HTTP MCP server:
+
+```json
+{
+  "mcpServers": {
+    "remote": {
+      "command": "gcf-proxy",
+      "args": ["--upstream", "http://host:3000/mcp"]
+    }
+  }
+}
+```
+
+Supports JSON and SSE responses. Session ID tracking via `Mcp-Session-Id` is automatic.
+
+## How it works
+
+The proxy translates in both directions:
 
 ```
-Client (LLM)  ←──  GCF  ←──  gcf-proxy  ←──  JSON  ←──  Your Server
-              ──→  stdin ──→             ──→  stdin  ──→
+Responses:  Server (JSON) -> gcf-proxy encodes -> LLM reads GCF   (79% input savings)
+Requests:   LLM writes GCF -> gcf-proxy decodes -> Server gets JSON (63% output savings)
 ```
 
-1. Client sends requests to gcf-proxy via stdin (unchanged)
-2. gcf-proxy forwards them to your server via stdin (unchanged)
-3. Your server responds with JSON via stdout (unchanged)
-4. gcf-proxy intercepts JSON-RPC responses containing tool results
-5. If the `text` content is structured JSON, it re-encodes as GCF
-6. Client receives GCF instead of JSON
+**Encode direction** (responses):
+1. Server responds with JSON
+2. Proxy intercepts JSON-RPC responses containing tool results
+3. Structured JSON is re-encoded as GCF (graph profile for code intelligence, generic profile for everything else)
+4. Client receives GCF instead of JSON
 
-Non-convertible responses (plain text, HTML, errors) pass through untouched.
+**Decode direction** (requests):
+1. Client sends a tool call with GCF strings in arguments
+2. Proxy detects the `GCF ` prefix (4-byte check, zero overhead)
+3. GCF strings are decoded to JSON objects inline
+4. Server receives JSON, never sees GCF
+
+Non-convertible content (plain text, HTML, errors, non-GCF strings) passes through unchanged in both directions.
 
 ## What gets converted
 
-The proxy looks for JSON-RPC responses with `result.content[].text` fields containing JSON objects. If the JSON has structured data (objects, arrays), it's converted to GCF. Specifically:
+The proxy looks for JSON-RPC responses with `result.content[].text` fields containing JSON. If the JSON has structured data (objects, arrays), it's converted to GCF:
 
 - **JSON with `tool` + `symbols` fields**: encoded with the graph profile (local IDs, edges, distance groups)
-- **Any other structured JSON**: encoded with the tabular profile (pipe-separated rows, section headers)
+- **Any other structured JSON**: encoded with the generic profile (pipe-separated rows, section headers)
 - **Plain text, HTML, markdown**: passed through unchanged
 
 ## Before and after
@@ -84,10 +97,10 @@ The proxy looks for JSON-RPC responses with `result.content[].text` fields conta
 ...10 symbols, 8 edges...]}
 ```
 
-**The LLM receives (GCF, 916 bytes):**
+**The LLM receives (GCF, 942 bytes):**
 
 ```
-GCF tool=context_for_task budget=10000 tokens=3200 symbols=10
+GCF profile=graph tool=context_for_task budget=10000 tokens=3200 symbols=10 edges=8
 ## targets
 @0 fn github.com/org/repo/pkg.AuthMiddleware 0.92 lsp_resolved
 @1 fn github.com/org/repo/pkg.ValidateToken 0.87 lsp_resolved
@@ -99,61 +112,94 @@ GCF tool=context_for_task budget=10000 tokens=3200 symbols=10
 ## extended
 @6 type github.com/org/repo/internal.TokenCache 0.41 structural
 @7 iface github.com/org/repo/internal.Logger 0.35 structural
-## edges
+## edges [8]
 @0<@3 calls
 @1<@0 calls
 @6<@1 references
 @5<@4 references
 @2<@3 references
 @7<@0 implements
+@8<@3 calls
+@9<@3 calls
 ```
 
-63% fewer tokens. Same information. Zero code changes.
+62% fewer tokens. Same information. Zero code changes.
+
+## Flags
+
+| Flag | Default | Description |
+|------|---------|-------------|
+| `--upstream <url>` | (none) | Connect to a remote MCP server over HTTP |
+| `--stream-threshold N` | 5 | Min symbols before streaming progress activates |
+| `--no-progress` | false | Disable progress notifications |
+| `--verbose` | false | Log per-call savings to stderr |
+
+## Streaming progress
+
+When a client sends a `progressToken` with a tool call and the response is large (5+ symbols by default), the proxy streams GCF fragments as MCP progress notifications. The LLM gets partial context immediately.
+
+Without `progressToken`: no streaming, backward compatible.
+
+## Verbose mode
+
+`gcf-proxy --verbose` logs per-call savings to stderr:
+
+```
+gcf-proxy: get_price_history              54.0KB -> 28.1KB (48% saved)
+gcf-proxy: get_ticker_info                10.0KB -> 7.4KB (26% saved)
+
+--- gcf-proxy session stats ---
+Tool calls rewritten:  2
+JSON bytes in:         64.0KB
+GCF bytes out:         35.5KB
+Bytes saved:           28.5KB (44.5%)
+Est. tokens saved:     ~7.1K
+-------------------------------
+```
 
 ## Test it
-
-Run the built-in savings test:
 
 ```bash
 git clone https://github.com/blackwell-systems/gcf-proxy
 cd gcf-proxy && bash test.sh
 ```
 
-This spins up a mock MCP server, pipes a realistic payload through the proxy, and shows the token savings.
-
 ## Troubleshooting
 
 **"command not found: gcf-proxy"**
 
-The binary isn't on your PATH. If you installed via pip, make sure your Python scripts directory is on PATH. If you installed via npm, make sure your global npm bin is on PATH. Try:
+Make sure your Python scripts or npm global bin directory is on PATH:
 
 ```bash
-which gcf-proxy          # should show a path
-gcf-proxy --help         # should show usage
+which gcf-proxy
+gcf-proxy --help
 ```
 
 **Server works without proxy but hangs with proxy**
 
-The proxy buffers stdout line by line. If your server doesn't flush stdout after each JSON-RPC response, the proxy will hang waiting for a complete line. Make sure your server flushes after each write.
+The proxy buffers stdout line by line. Make sure your server flushes after each JSON-RPC response.
 
 **Responses pass through unconverted**
 
-The proxy only converts `text` content blocks in JSON-RPC responses that contain valid JSON objects or arrays. If your tool returns plain text, markdown, or HTML, it passes through unchanged. This is intentional.
+The proxy only converts `text` content blocks containing valid JSON objects or arrays. Plain text, markdown, and HTML pass through unchanged. This is intentional.
+
+**Remote server not connecting**
+
+Check the URL includes the full MCP endpoint path (e.g., `http://host:3000/mcp`, not just `http://host:3000`). The proxy POSTs JSON-RPC messages to this URL.
 
 ## When to use the proxy vs the library
 
 | Scenario | Use |
 |----------|-----|
-| You can't modify the server (third-party binary) | Proxy |
+| You can't modify the server | Proxy |
+| Server is remote (HTTP) | Proxy (`--upstream`) |
 | You want to test GCF savings without code changes | Proxy |
-| You control the server and want session dedup/delta | Library (`encode`) |
-| You want maximum control over encoding | Library |
+| You control the server and want session dedup/delta | Library |
 | You want zero-effort adoption | Proxy |
-
-The proxy gives you the baseline GCF savings (positional encoding, tabular rows) without session dedup or delta encoding. For those features, use the [GCF libraries](/ecosystem/implementations) directly.
 
 ## Links
 
 - [GitHub](https://github.com/blackwell-systems/gcf-proxy)
 - [PyPI](https://pypi.org/project/gcf-proxy/)
 - [npm](https://www.npmjs.com/package/@blackwell-systems/gcf-proxy)
+- [Documentation](https://gcformat.com/guide/proxy.html)
