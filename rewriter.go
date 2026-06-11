@@ -10,7 +10,7 @@ import (
 	gcf "github.com/blackwell-systems/gcf-go"
 )
 
-// RewriterConfig controls streaming, session, and caching behavior.
+// RewriterConfig controls streaming, session, caching, and delta behavior.
 type RewriterConfig struct {
 	StreamThreshold int          // Min symbols before triggering incremental mode (default 5)
 	EnableProgress  bool         // Whether to emit progress notifications
@@ -18,6 +18,7 @@ type RewriterConfig struct {
 	Verbose         bool         // Log per-call savings to stderr
 	Session         *gcf.Session // Optional session for cross-call dedup (nil = disabled)
 	EnableCache     bool         // Cache encoded responses for identical tool calls
+	EnableDelta     bool         // Compute deltas against previous response for same tool
 	MinSize         int          // Skip encoding for responses smaller than this (bytes, 0 = no minimum)
 }
 
@@ -36,8 +37,9 @@ type RewriteResult struct {
 
 // Rewriter handles JSON-to-GCF conversion with optional streaming progress.
 type Rewriter struct {
-	config RewriterConfig
-	cache  map[string]RewriteResult // tool+args hash -> cached result
+	config    RewriterConfig
+	cache     map[string]RewriteResult // content hash -> cached result
+	prevGraph map[string]*gcf.Payload  // tool name -> previous decoded Payload (for delta)
 }
 
 // NewRewriter creates a Rewriter with the given config.
@@ -48,6 +50,9 @@ func NewRewriter(config RewriterConfig) *Rewriter {
 	rw := &Rewriter{config: config}
 	if config.EnableCache {
 		rw.cache = make(map[string]RewriteResult)
+	}
+	if config.EnableDelta {
+		rw.prevGraph = make(map[string]*gcf.Payload)
 	}
 	return rw
 }
@@ -79,35 +84,65 @@ func (r *Rewriter) RewriteToolResult(text string, progressFn ProgressFunc) Rewri
 		}
 	}
 
-	// GCF-in: if the upstream already produces GCF graph profile and we have
-	// a session, decode it, re-encode with session dedup (bare refs for
-	// previously-transmitted symbols).
+	// GCF-in: if the upstream already produces GCF graph profile, decode it
+	// and apply optimizations: delta encoding, session dedup, or both.
 	if r.config.Verbose && strings.HasPrefix(trimmed, "GCF") {
 		fmt.Fprintf(os.Stderr, "gcf-proxy: GCF-in detected, first 60 chars: %q, session=%v\n", trimmed[:min(60, len(trimmed))], r.config.Session != nil)
 	}
-	if strings.HasPrefix(trimmed, "GCF profile=graph") && r.config.Session != nil {
+	if strings.HasPrefix(trimmed, "GCF profile=graph") && (r.config.Session != nil || r.config.EnableDelta) {
 		p, err := gcf.Decode(trimmed)
 		if err != nil && r.config.Verbose {
 			fmt.Fprintf(os.Stderr, "gcf-proxy: GCF decode failed: %v\n", err)
 		}
 		if err == nil && p != nil {
-			if r.config.Verbose {
-				fmt.Fprintf(os.Stderr, "gcf-proxy: decoded %d symbols, session size before: %d\n", len(p.Symbols), r.config.Session.Size())
+			// Try delta first: if we have a previous response for this tool
+			// and the diff is small, send only what changed.
+			if r.config.EnableDelta {
+				if delta := r.tryDelta(p); delta != nil {
+					encoded := gcf.EncodeDelta(delta)
+					delta.DeltaTokens = len(encoded) / 4
+					encoded = gcf.EncodeDelta(delta)
+
+					fullEncoded := gcf.Encode(p)
+					if len(encoded) < len(fullEncoded) {
+						if r.config.Verbose {
+							fmt.Fprintf(os.Stderr, "gcf-proxy: delta: %d removed, %d added (%d bytes vs %d full)\n",
+								len(delta.Removed), len(delta.Added), len(encoded), len(fullEncoded))
+						}
+						if r.config.Stats != nil {
+							r.config.Stats.Record(len(trimmed), len(encoded), len(p.Symbols), len(p.Edges))
+						}
+						return r.cacheResult(trimmed, RewriteResult{
+							Original:    text,
+							Rewritten:   encoded,
+							Converted:   true,
+							SymbolCount: len(p.Symbols),
+							EdgeCount:   len(p.Edges),
+						})
+					}
+				}
 			}
-			encoded := gcf.EncodeWithSession(p, r.config.Session)
-			if r.config.Verbose {
-				fmt.Fprintf(os.Stderr, "gcf-proxy: session size after: %d, bare refs in output: %d\n", r.config.Session.Size(), strings.Count(encoded, "previously transmitted"))
+
+			// Session dedup: re-encode with bare refs for known symbols.
+			if r.config.Session != nil {
+				if r.config.Verbose {
+					fmt.Fprintf(os.Stderr, "gcf-proxy: decoded %d symbols, session size before: %d\n", len(p.Symbols), r.config.Session.Size())
+				}
+				encoded := gcf.EncodeWithSession(p, r.config.Session)
+				if r.config.Verbose {
+					fmt.Fprintf(os.Stderr, "gcf-proxy: session size after: %d, bare refs in output: %d\n", r.config.Session.Size(), strings.Count(encoded, "previously transmitted"))
+				}
+				if r.config.Stats != nil {
+					r.config.Stats.Record(len(trimmed), len(encoded), len(p.Symbols), len(p.Edges))
+				}
+				return r.cacheResult(trimmed, RewriteResult{
+					Original:    text,
+					Rewritten:   encoded,
+					Converted:   true,
+					SymbolCount: len(p.Symbols),
+					EdgeCount:   len(p.Edges),
+				})
 			}
-			if r.config.Stats != nil {
-				r.config.Stats.Record(len(trimmed), len(encoded), len(p.Symbols), len(p.Edges))
-			}
-			return r.cacheResult(trimmed, RewriteResult{
-				Original:    text,
-				Rewritten:   encoded,
-				Converted:   true,
-				SymbolCount: len(p.Symbols),
-				EdgeCount:   len(p.Edges),
-			})
 		}
 	}
 
@@ -146,6 +181,99 @@ func (r *Rewriter) cacheResult(key string, result RewriteResult) RewriteResult {
 		r.cache[key] = result
 	}
 	return result
+}
+
+// tryDelta checks if we have a previous Payload for this tool and computes
+// a delta if the responses differ. Returns nil if no delta is possible.
+func (r *Rewriter) tryDelta(current *gcf.Payload) *gcf.DeltaPayload {
+	if r.prevGraph == nil || current.Tool == "" {
+		return nil
+	}
+
+	prev, exists := r.prevGraph[current.Tool]
+	if !exists {
+		// First call for this tool: store and return nil.
+		r.prevGraph[current.Tool] = current
+		return nil
+	}
+
+	// Compute set differences.
+	prevSyms := make(map[string]gcf.Symbol, len(prev.Symbols))
+	for _, s := range prev.Symbols {
+		prevSyms[s.QualifiedName] = s
+	}
+	currSyms := make(map[string]gcf.Symbol, len(current.Symbols))
+	for _, s := range current.Symbols {
+		currSyms[s.QualifiedName] = s
+	}
+
+	var removed, added []gcf.Symbol
+	for qn, s := range prevSyms {
+		if _, ok := currSyms[qn]; !ok {
+			removed = append(removed, s)
+		}
+	}
+	for qn, s := range currSyms {
+		if _, ok := prevSyms[qn]; !ok {
+			added = append(added, s)
+		}
+	}
+
+	// Edge differences.
+	type edgeKey struct{ src, tgt, typ string }
+	prevEdges := make(map[edgeKey]gcf.Edge, len(prev.Edges))
+	for _, e := range prev.Edges {
+		prevEdges[edgeKey{e.Source, e.Target, e.EdgeType}] = e
+	}
+	currEdges := make(map[edgeKey]gcf.Edge, len(current.Edges))
+	for _, e := range current.Edges {
+		currEdges[edgeKey{e.Source, e.Target, e.EdgeType}] = e
+	}
+
+	var removedEdges, addedEdges []gcf.Edge
+	for k, e := range prevEdges {
+		if _, ok := currEdges[k]; !ok {
+			removedEdges = append(removedEdges, e)
+		}
+	}
+	for k, e := range currEdges {
+		if _, ok := prevEdges[k]; !ok {
+			addedEdges = append(addedEdges, e)
+		}
+	}
+
+	// No changes: identical response.
+	if len(removed) == 0 && len(added) == 0 && len(removedEdges) == 0 && len(addedEdges) == 0 {
+		r.prevGraph[current.Tool] = current
+		return nil
+	}
+
+	// Only send delta if it's actually smaller than a full response.
+	// Heuristic: delta is worth it when changes are < 60% of total symbols.
+	totalChanges := len(removed) + len(added)
+	if totalChanges > len(current.Symbols)*60/100 {
+		r.prevGraph[current.Tool] = current
+		return nil
+	}
+
+	baseRoot := gcf.PackRoot(prev.Symbols, prev.Edges)
+	newRoot := gcf.PackRoot(current.Symbols, current.Edges)
+
+	// Update stored payload for next comparison.
+	r.prevGraph[current.Tool] = current
+
+	fullEncoded := gcf.Encode(current)
+
+	return &gcf.DeltaPayload{
+		Tool:         current.Tool,
+		BaseRoot:     baseRoot,
+		NewRoot:      newRoot,
+		Removed:      removed,
+		Added:        added,
+		RemovedEdges: removedEdges,
+		AddedEdges:   addedEdges,
+		FullTokens:   len(fullEncoded) / 4,
+	}
 }
 
 // decodeRequestGCF scans a JSON-RPC request line for GCF strings in tool call
@@ -283,6 +411,37 @@ func (r *Rewriter) tryGraphProfile(text string, progressFn ProgressFunc) Rewrite
 			Status:   e.Status,
 		})
 	}
+	// Try delta first: if we have a previous response for this tool
+	// and the diff is small, send only what changed.
+	if r.config.EnableDelta {
+		if delta := r.tryDelta(p); delta != nil {
+			encoded := gcf.EncodeDelta(delta)
+			delta.DeltaTokens = len(encoded) / 4
+			encoded = gcf.EncodeDelta(delta)
+
+			// Only use delta if it's actually smaller than the full encode.
+			fullEncoded := gcf.Encode(p)
+			if len(encoded) < len(fullEncoded) {
+				if r.config.Verbose {
+					fmt.Fprintf(os.Stderr, "gcf-proxy: delta: %d removed, %d added (%d bytes vs %d full)\n",
+						len(delta.Removed), len(delta.Added), len(encoded), len(fullEncoded))
+				}
+				if r.config.Stats != nil {
+					r.config.Stats.Record(len(text), len(encoded), len(p.Symbols), len(p.Edges))
+				}
+				return r.cacheResult(text, RewriteResult{
+					Original:    text,
+					Rewritten:   encoded,
+					Converted:   true,
+					SymbolCount: len(p.Symbols),
+					EdgeCount:   len(p.Edges),
+				})
+			} else if r.config.Verbose {
+				fmt.Fprintf(os.Stderr, "gcf-proxy: delta skipped (delta %d >= full %d)\n", len(encoded), len(fullEncoded))
+			}
+		}
+	}
+
 	// Use session dedup if available (bare refs for previously-transmitted symbols).
 	var encoded string
 	if r.config.Session != nil {

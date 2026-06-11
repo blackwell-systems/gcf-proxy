@@ -1,5 +1,12 @@
 # Changelog
 
+## v0.10.0
+
+- **Proxy-level delta encoding** (`--delta`): when a tool's response changes slightly between calls, the proxy computes and sends only the diff (added/removed symbols and edges). 68% savings on 20-symbol payloads with 10% change. The server sends full responses every time; the proxy handles the diffing transparently.
+- Delta uses GCF's native `EncodeDelta` format with `pack_root` content hashes
+- Size guard: only sends delta when it's actually smaller than the full response
+- Change threshold: skips delta when > 60% of symbols changed (full response is more efficient)
+
 ## v0.9.0
 
 - **Response caching** (`--cache`): identical tool call responses return cached GCF instantly. Zero re-encoding, zero upstream calls on cache hit.

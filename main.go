@@ -48,6 +48,7 @@ Flags:
   --upstream <url>       Connect to a remote MCP server over HTTP
   --session              Enable session dedup (bare refs for previously-transmitted symbols)
   --cache                Cache encoded responses for identical tool calls
+  --delta                Send only changed symbols when a tool's response changes slightly
   --min-size N           Skip encoding for responses smaller than N bytes (default: 0, no minimum)
   --stream-threshold N   Min symbols before streaming mode activates (default: 5)
   --no-progress          Disable progress notifications
@@ -90,6 +91,7 @@ Version: %s
 	upstreamURL := ""
 	enableSession := false
 	enableCache := false
+	enableDelta := false
 	minSize := 0
 	httpAddr := ""
 	args := os.Args[1:]
@@ -116,6 +118,9 @@ Version: %s
 		case args[0] == "--cache":
 			enableCache = true
 			args = args[1:]
+		case args[0] == "--delta":
+			enableDelta = true
+			args = args[1:]
 		case args[0] == "--min-size" && len(args) > 1:
 			if n, err := strconv.Atoi(args[1]); err == nil {
 				minSize = n
@@ -137,6 +142,7 @@ done:
 		Stats:           stats,
 		Verbose:         verbose,
 		EnableCache:     enableCache,
+		EnableDelta:     enableDelta,
 		MinSize:         minSize,
 	}
 	if enableSession {

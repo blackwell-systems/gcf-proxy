@@ -627,6 +627,92 @@ func TestMinSize_ZeroMeansNoMinimum(t *testing.T) {
 	}
 }
 
+func TestDelta_SendsDiffOnChange(t *testing.T) {
+	rw := NewRewriter(RewriterConfig{StreamThreshold: 100, EnableDelta: true})
+
+	// Build a 20-symbol payload with long qualified names so delta is smaller than full.
+	symbols1 := make([]map[string]any, 20)
+	for i := 0; i < 20; i++ {
+		symbols1[i] = map[string]any{
+			"qualifiedName": fmt.Sprintf("github.com/org/repo/internal/pkg.Symbol%d", i),
+			"kind": "function", "score": 0.9 - float64(i)*0.03, "provenance": "lsp_resolved", "distance": i / 7,
+		}
+	}
+	p1 := map[string]any{"tool": "test", "tokensUsed": 200, "tokenBudget": 2000, "symbols": symbols1, "edges": []any{}}
+	payload1, _ := json.Marshal(p1)
+
+	r1 := rw.RewriteToolResult(string(payload1), nil)
+	if !r1.Converted {
+		t.Fatal("expected conversion on call 1")
+	}
+	if strings.Contains(r1.Rewritten, "delta=true") {
+		t.Error("first call should not produce a delta")
+	}
+
+	// Change 2 of 20 symbols (10% change ratio).
+	symbols2 := make([]map[string]any, 20)
+	for i := 0; i < 20; i++ {
+		symbols2[i] = symbols1[i]
+	}
+	symbols2[18] = map[string]any{
+		"qualifiedName": "github.com/org/repo/internal/pkg.NewSymbolA",
+		"kind": "function", "score": 0.2, "provenance": "lsp_resolved", "distance": 2,
+	}
+	symbols2[19] = map[string]any{
+		"qualifiedName": "github.com/org/repo/internal/pkg.NewSymbolB",
+		"kind": "type", "score": 0.15, "provenance": "ast_inferred", "distance": 2,
+	}
+	p2 := map[string]any{"tool": "test", "tokensUsed": 200, "tokenBudget": 2000, "symbols": symbols2, "edges": []any{}}
+	payload2, _ := json.Marshal(p2)
+
+	r2 := rw.RewriteToolResult(string(payload2), nil)
+	if !r2.Converted {
+		t.Fatal("expected conversion on call 2")
+	}
+	if !strings.Contains(r2.Rewritten, "delta=true") {
+		t.Errorf("expected delta on call 2, got:\n%s", r2.Rewritten[:min(len(r2.Rewritten), 300)])
+	}
+	if !strings.Contains(r2.Rewritten, "NewSymbolA") {
+		t.Error("delta should mention added NewSymbolA")
+	}
+	t.Logf("full: %d bytes, delta: %d bytes, savings: %.0f%%",
+		len(r1.Rewritten), len(r2.Rewritten),
+		100*(1-float64(len(r2.Rewritten))/float64(len(r1.Rewritten))))
+}
+
+func TestDelta_IdenticalResponseNoDelta(t *testing.T) {
+	rw := NewRewriter(RewriterConfig{StreamThreshold: 100, EnableDelta: true})
+
+	payload := `{"tool":"test","tokensUsed":100,"tokenBudget":1000,"symbols":[{"qualifiedName":"pkg.A","kind":"function","score":0.9,"provenance":"lsp","distance":0}],"edges":[]}`
+	rw.RewriteToolResult(payload, nil)
+	r2 := rw.RewriteToolResult(payload, nil)
+
+	if strings.Contains(r2.Rewritten, "delta=true") {
+		t.Error("identical response should not produce a delta")
+	}
+}
+
+func TestDelta_LargeChangeSkipsDelta(t *testing.T) {
+	rw := NewRewriter(RewriterConfig{StreamThreshold: 100, EnableDelta: true})
+
+	payload1 := `{"tool":"test","tokensUsed":100,"tokenBudget":1000,"symbols":[{"qualifiedName":"pkg.A","kind":"function","score":0.9,"provenance":"lsp","distance":0},{"qualifiedName":"pkg.B","kind":"type","score":0.8,"provenance":"lsp","distance":0},{"qualifiedName":"pkg.C","kind":"method","score":0.7,"provenance":"lsp","distance":1}],"edges":[]}`
+	rw.RewriteToolResult(payload1, nil)
+
+	payload2 := `{"tool":"test","tokensUsed":100,"tokenBudget":1000,"symbols":[{"qualifiedName":"pkg.X","kind":"function","score":0.9,"provenance":"lsp","distance":0},{"qualifiedName":"pkg.Y","kind":"type","score":0.8,"provenance":"lsp","distance":0},{"qualifiedName":"pkg.Z","kind":"method","score":0.7,"provenance":"lsp","distance":1}],"edges":[]}`
+	r2 := rw.RewriteToolResult(payload2, nil)
+
+	if strings.Contains(r2.Rewritten, "delta=true") {
+		t.Error("large change should send full response, not delta")
+	}
+}
+
+func TestDelta_DisabledByDefault(t *testing.T) {
+	rw := NewRewriter(RewriterConfig{StreamThreshold: 100})
+	if rw.prevGraph != nil {
+		t.Error("prevGraph should be nil when delta is not enabled")
+	}
+}
+
 func TestRewriter_V2GraphHeader(t *testing.T) {
 	rw := NewRewriter(RewriterConfig{StreamThreshold: 5})
 	payload := `{"tool":"test","tokensUsed":50,"tokenBudget":500,"symbols":[{"qualifiedName":"a.A","kind":"function","score":0.9,"provenance":"lsp","distance":0}],"edges":[]}`
