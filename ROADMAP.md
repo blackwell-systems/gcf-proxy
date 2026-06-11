@@ -100,9 +100,9 @@ Call 5: 6,335 bytes (175 bare refs, 41% saved)
 
 ---
 
-## Phase 5: Production Hardening (next)
+## Phase 5: Production Hardening
 
-Polish for production deployment.
+Polish for production deployment. Build when demand arrives.
 
 **Planned:**
 - Graceful shutdown (drain in-flight requests, close upstream connections)
@@ -110,8 +110,22 @@ Polish for production deployment.
 - Rate limiting on progress notifications (avoid flooding slow clients)
 - Metrics endpoint (encoding time, savings ratio, session cache hit rate)
 - SSE resume support (event IDs per spec for reconnection)
-- Health check endpoint
 - Configurable logging levels
+
+---
+
+## Phase 6: Aggregate Proxy
+
+Single proxy process wrapping multiple MCP servers. One shared session across all backends.
+
+**Planned:**
+- `gcf-proxy --aggregate server-a server-b server-c`: multiplex multiple servers behind one proxy
+- Cross-server session dedup: symbols from server-a become bare refs when server-b returns the same symbols
+- Unified stats across all backends
+- Tool name routing: merge tool registrations from all servers, route calls to the correct backend
+- Tool name collision handling
+
+**Why it matters:** In a real agent workflow, the same code graph symbols appear across blast_radius, find_callers, explore_symbol, and find_references. A shared session across all tools compounds faster than per-server sessions.
 
 ---
 
