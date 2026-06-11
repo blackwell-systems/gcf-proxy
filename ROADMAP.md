@@ -100,27 +100,24 @@ Call 5: 6,335 bytes (175 bare refs, 41% saved)
 
 ---
 
-## Phase 5: Response Caching
+## Phase 5: Response Caching ✓ DONE
 
-Cache encoded responses for identical tool calls within a session. Agent loops often retry the same query; a cache hit returns zero tokens instead of re-encoding.
+Cache encoded responses for identical tool calls within a session.
 
-**Planned:**
-- Cache key: hash of tool name + serialized arguments
-- Return cached GCF on exact match (no re-encoding, no upstream call)
-- Cache scoped to session lifetime (cleared on proxy restart)
-- `--cache` flag to enable (off by default)
-- Cache hit/miss stats in verbose output and session summary
+**Shipped:**
+- `--cache`: return cached GCF on identical content (zero re-encoding)
+- Cache scoped to proxy lifetime
+- Cache hit stats in verbose output and session summary
 
 ---
 
-## Phase 5.5: Min-Size Bypass
+## Phase 5.5: Min-Size Bypass ✓ DONE
 
-Skip GCF encoding for tiny responses where the `GCF profile=generic` header overhead costs more than it saves.
+Skip GCF encoding for tiny responses.
 
-**Planned:**
-- `--min-size N` flag (default: 100 bytes)
-- Responses smaller than N bytes pass through as-is
-- Avoids wrapping 20-byte error messages in GCF headers
+**Shipped:**
+- `--min-size N`: responses smaller than N bytes pass through as-is
+- Avoids wrapping small error messages in GCF headers
 
 ---
 
