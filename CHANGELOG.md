@@ -1,5 +1,12 @@
 # Changelog
 
+## v0.8.0
+
+- **HTTP/SSE frontend** (`--http :9090`): serve MCP over Streamable HTTP. Turns any stdio MCP server into a remote service. Supports JSON and SSE responses, health check endpoint.
+- Deploy as: `gcf-proxy --http :9090 --session your-mcp-server`
+- Chains with `--upstream`: `gcf-proxy --http :9090 --upstream http://remote/mcp`
+- All features (bidirectional translation, session dedup, streaming progress) work in HTTP mode
+
 ## v0.7.0
 
 - **Session dedup** (`--session`): cross-call deduplication for graph payloads. Previously-transmitted symbols become bare references on subsequent calls. Proven end-to-end with agent-lsp: 40% savings on repeated queries, compounding across a session.

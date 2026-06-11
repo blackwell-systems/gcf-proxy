@@ -463,6 +463,100 @@ func TestSessionDedup_CompoundingSavings(t *testing.T) {
 	t.Logf("Savings: call 2 = %.0f%%, call 3 = %.0f%%", savings2, savings3)
 }
 
+func TestHTTPFrontend_HealthCheck(t *testing.T) {
+	rw := NewRewriter(RewriterConfig{StreamThreshold: 5})
+	frontend := NewHTTPFrontend(":0", rw, &Stats{}, false)
+
+	mux := http.NewServeMux()
+	mux.HandleFunc("/health", frontend.handleHealth)
+	server := httptest.NewServer(mux)
+	defer server.Close()
+
+	resp, err := http.Get(server.URL + "/health")
+	if err != nil {
+		t.Fatalf("health check failed: %v", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != 200 {
+		t.Errorf("expected 200, got %d", resp.StatusCode)
+	}
+	body, _ := io.ReadAll(resp.Body)
+	if !strings.Contains(string(body), "ok") {
+		t.Errorf("expected ok in body, got: %s", body)
+	}
+}
+
+func TestHTTPFrontend_MCPRequest(t *testing.T) {
+	// Mock upstream HTTP server that returns a tool result.
+	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		w.Write([]byte(`{"jsonrpc":"2.0","id":1,"result":{"content":[{"type":"text","text":"{\"employees\":[{\"id\":1,\"name\":\"Alice\"},{\"id\":2,\"name\":\"Bob\"}]}"}]}}`))
+	}))
+	defer upstream.Close()
+
+	rw := NewRewriter(RewriterConfig{StreamThreshold: 5})
+	frontend := NewHTTPFrontend(":0", rw, &Stats{}, false)
+	frontend.SetHTTPBackend(upstream.URL)
+
+	mux := http.NewServeMux()
+	mux.HandleFunc("/", frontend.handleMCP)
+	server := httptest.NewServer(mux)
+	defer server.Close()
+
+	// Send a tool call.
+	reqBody := `{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"list"}}`
+	resp, err := http.Post(server.URL, "application/json", strings.NewReader(reqBody))
+	if err != nil {
+		t.Fatalf("request failed: %v", err)
+	}
+	defer resp.Body.Close()
+
+	body, _ := io.ReadAll(resp.Body)
+	bodyStr := string(body)
+
+	// Response should contain GCF-encoded content.
+	if !strings.Contains(bodyStr, "GCF profile=generic") {
+		t.Errorf("expected GCF in response, got: %s", bodyStr[:min(len(bodyStr), 200)])
+	}
+}
+
+func TestHTTPFrontend_SSEResponse(t *testing.T) {
+	// Mock upstream that returns SSE.
+	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "text/event-stream")
+		fmt.Fprint(w, "data: {\"jsonrpc\":\"2.0\",\"method\":\"notifications/progress\",\"params\":{\"progress\":1}}\n\n")
+		fmt.Fprint(w, "data: {\"jsonrpc\":\"2.0\",\"id\":1,\"result\":{\"content\":[{\"type\":\"text\",\"text\":\"hello\"}]}}\n\n")
+	}))
+	defer upstream.Close()
+
+	rw := NewRewriter(RewriterConfig{StreamThreshold: 5})
+	frontend := NewHTTPFrontend(":0", rw, &Stats{}, false)
+	frontend.SetHTTPBackend(upstream.URL)
+
+	mux := http.NewServeMux()
+	mux.HandleFunc("/", frontend.handleMCP)
+	server := httptest.NewServer(mux)
+	defer server.Close()
+
+	req, _ := http.NewRequest("POST", server.URL, strings.NewReader(`{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{}}`))
+	req.Header.Set("Accept", "text/event-stream")
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatalf("request failed: %v", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.Header.Get("Content-Type") != "text/event-stream" {
+		t.Errorf("expected SSE content type, got: %s", resp.Header.Get("Content-Type"))
+	}
+
+	body, _ := io.ReadAll(resp.Body)
+	if !strings.Contains(string(body), "data:") {
+		t.Errorf("expected SSE data events, got: %s", string(body))
+	}
+}
+
 func TestRewriter_V2GraphHeader(t *testing.T) {
 	rw := NewRewriter(RewriterConfig{StreamThreshold: 5})
 	payload := `{"tool":"test","tokensUsed":50,"tokenBudget":500,"symbols":[{"qualifiedName":"a.A","kind":"function","score":0.9,"provenance":"lsp","distance":0}],"edges":[]}`

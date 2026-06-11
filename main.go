@@ -38,27 +38,34 @@ func main() {
 		fmt.Fprintf(os.Stderr, `gcf-proxy - streaming MCP proxy that re-encodes JSON tool responses as GCF
 
 Usage:
-  gcf-proxy [flags] <mcp-server-command> [args...]    # stdio backend (local)
-  gcf-proxy [flags] --upstream <url>                   # HTTP backend (remote)
+  gcf-proxy [flags] <mcp-server-command> [args...]    # stdio frontend + local backend
+  gcf-proxy [flags] --upstream <url>                   # stdio frontend + remote backend
+  gcf-proxy [flags] --http <addr> <server> [args...]   # HTTP frontend + local backend
+  gcf-proxy [flags] --http <addr> --upstream <url>     # HTTP frontend + remote backend
 
 Flags:
-  --upstream <url>       Connect to a remote MCP server over HTTP instead of spawning a subprocess
+  --http <addr>          Serve MCP over Streamable HTTP (e.g. :9090, 0.0.0.0:8080)
+  --upstream <url>       Connect to a remote MCP server over HTTP
   --session              Enable session dedup (bare refs for previously-transmitted symbols)
   --stream-threshold N   Min symbols before streaming mode activates (default: 5)
   --no-progress          Disable progress notifications
   --verbose              Log per-call savings to stderr
 
 Examples:
-  gcf-proxy memory-mcp-server-go                        # local subprocess
-  gcf-proxy --upstream http://localhost:3000/mcp         # remote HTTP server
-  gcf-proxy --verbose uvx yfinance-mcp                   # local with logging
-  gcf-proxy --upstream https://mcp.example.com/api       # remote HTTPS
+  gcf-proxy memory-mcp-server-go                                    # stdio, local
+  gcf-proxy --upstream http://localhost:3000/mcp                     # stdio, remote
+  gcf-proxy --http :9090 --session memory-mcp-server-go              # HTTP, local + dedup
+  gcf-proxy --http :9090 --upstream https://mcp.example.com/api      # HTTP, remote
+  gcf-proxy --verbose --session uvx yfinance-mcp                     # stdio, local + dedup
 
-MCP config (local):
+MCP config (stdio):
   {"mcpServers": {"memory": {"command": "gcf-proxy", "args": ["memory-mcp-server-go"]}}}
 
-MCP config (remote):
+MCP config (remote via stdio):
   {"mcpServers": {"remote": {"command": "gcf-proxy", "args": ["--upstream", "http://host:3000/mcp"]}}}
+
+Deploy as HTTP service:
+  gcf-proxy --http :9090 --session your-mcp-server    # then connect via HTTP
 
 Features:
   - Re-encodes JSON tool responses as GCF (79%% fewer input tokens)
@@ -80,6 +87,7 @@ Version: %s
 	verbose := false
 	upstreamURL := ""
 	enableSession := false
+	httpAddr := ""
 	args := os.Args[1:]
 
 	for len(args) > 0 {
@@ -101,6 +109,9 @@ Version: %s
 		case args[0] == "--session":
 			enableSession = true
 			args = args[1:]
+		case args[0] == "--http" && len(args) > 1:
+			httpAddr = args[1]
+			args = args[2:]
 		default:
 			goto done
 		}
@@ -122,7 +133,23 @@ done:
 	}
 	rewriter := NewRewriter(config)
 
-	// HTTP backend mode: connect to remote MCP server.
+	// HTTP frontend mode: serve MCP over Streamable HTTP.
+	if httpAddr != "" {
+		frontend := NewHTTPFrontend(httpAddr, rewriter, stats, verbose)
+		if upstreamURL != "" {
+			frontend.SetHTTPBackend(upstreamURL)
+		} else if len(args) > 0 {
+			frontend.SetStdioBackend(args[0], args[1:])
+		} else {
+			fatal("--http requires either a server command or --upstream")
+		}
+		if err := frontend.ListenAndServe(); err != nil {
+			fatal("HTTP server: %v", err)
+		}
+		return
+	}
+
+	// HTTP backend mode (stdio frontend): connect to remote MCP server.
 	if upstreamURL != "" {
 		runHTTPBackend(upstreamURL, rewriter, stats, verbose)
 		return
