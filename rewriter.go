@@ -37,9 +37,10 @@ type RewriteResult struct {
 
 // Rewriter handles JSON-to-GCF conversion with optional streaming progress.
 type Rewriter struct {
-	config    RewriterConfig
-	cache     map[string]RewriteResult // content hash -> cached result
-	prevGraph map[string]*gcf.Payload  // tool name -> previous decoded Payload (for delta)
+	config       RewriterConfig
+	cache        map[string]RewriteResult // content hash -> cached result (output layer)
+	payloadCache map[string]*gcf.Payload  // content hash -> decoded Payload (for session re-encode)
+	prevGraph    map[string]*gcf.Payload  // tool name -> previous decoded Payload (for delta)
 }
 
 // NewRewriter creates a Rewriter with the given config.
@@ -50,6 +51,12 @@ func NewRewriter(config RewriterConfig) *Rewriter {
 	rw := &Rewriter{config: config}
 	if config.EnableCache {
 		rw.cache = make(map[string]RewriteResult)
+		if config.Session != nil {
+			// When both cache and session are active, cache decoded payloads
+			// instead of encoded output. The output cache would serve stale
+			// results with full symbols when the session expects bare refs.
+			rw.payloadCache = make(map[string]*gcf.Payload)
+		}
 	}
 	if config.EnableDelta {
 		rw.prevGraph = make(map[string]*gcf.Payload)
@@ -71,7 +78,32 @@ func (r *Rewriter) RewriteToolResult(text string, progressFn ProgressFunc) Rewri
 		return RewriteResult{Original: text}
 	}
 
-	// Response cache: return cached result for identical content.
+	// Payload cache: when session is active, re-encode from cached decoded payloads.
+	// The output cache would serve results with full symbols when the session has
+	// already seen them and expects bare refs.
+	if r.payloadCache != nil {
+		if p, ok := r.payloadCache[trimmed]; ok {
+			if r.config.Verbose {
+				fmt.Fprintf(os.Stderr, "gcf-proxy: payload cache hit, re-encoding with session (session size: %d)\n", r.config.Session.Size())
+			}
+			if r.config.Stats != nil {
+				r.config.Stats.CacheHits.Add(1)
+			}
+			encoded := gcf.EncodeWithSession(p, r.config.Session)
+			if r.config.Stats != nil {
+				r.config.Stats.Record(len(trimmed), len(encoded), len(p.Symbols), len(p.Edges))
+			}
+			return RewriteResult{
+				Original:    text,
+				Rewritten:   encoded,
+				Converted:   true,
+				SymbolCount: len(p.Symbols),
+				EdgeCount:   len(p.Edges),
+			}
+		}
+	}
+
+	// Response cache: return cached result for identical content (non-session path).
 	if r.cache != nil {
 		if cached, ok := r.cache[trimmed]; ok {
 			if r.config.Verbose {
@@ -135,13 +167,18 @@ func (r *Rewriter) RewriteToolResult(text string, progressFn ProgressFunc) Rewri
 				if r.config.Stats != nil {
 					r.config.Stats.Record(len(trimmed), len(encoded), len(p.Symbols), len(p.Edges))
 				}
-				return r.cacheResult(trimmed, RewriteResult{
+				// Cache the decoded payload (not the encoded output) so future
+				// hits re-encode with current session state.
+				if r.payloadCache != nil {
+					r.payloadCache[trimmed] = p
+				}
+				return RewriteResult{
 					Original:    text,
 					Rewritten:   encoded,
 					Converted:   true,
 					SymbolCount: len(p.Symbols),
 					EdgeCount:   len(p.Edges),
-				})
+				}
 			}
 		}
 	}
@@ -446,9 +483,23 @@ func (r *Rewriter) tryGraphProfile(text string, progressFn ProgressFunc) Rewrite
 	var encoded string
 	if r.config.Session != nil {
 		encoded = gcf.EncodeWithSession(p, r.config.Session)
-	} else {
-		encoded = gcf.Encode(p)
+		if r.config.Stats != nil {
+			r.config.Stats.Record(len(text), len(encoded), len(p.Symbols), len(p.Edges))
+		}
+		// Cache the decoded payload (not the encoded output) so future
+		// hits re-encode with current session state.
+		if r.payloadCache != nil {
+			r.payloadCache[text] = p
+		}
+		return RewriteResult{
+			Original:    text,
+			Rewritten:   encoded,
+			Converted:   true,
+			SymbolCount: len(p.Symbols),
+			EdgeCount:   len(p.Edges),
+		}
 	}
+	encoded = gcf.Encode(p)
 	if r.config.Stats != nil {
 		r.config.Stats.Record(len(text), len(encoded), len(p.Symbols), len(p.Edges))
 	}

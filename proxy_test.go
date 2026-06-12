@@ -1010,6 +1010,50 @@ func TestRewriter_StatsRecordedGeneric(t *testing.T) {
 
 // ---- rewriter.go: cache with stats ----
 
+func TestCache_WithSession_ProducesBareRefs(t *testing.T) {
+	// Regression test: cache + session must re-encode with current session state,
+	// not return stale output with full symbols.
+	sess := gcf.NewSession()
+	rw := NewRewriter(RewriterConfig{
+		StreamThreshold: 100,
+		EnableCache:     true,
+		Session:         sess,
+	})
+
+	payload := `{"tool":"test","tokensUsed":100,"tokenBudget":1000,"symbols":[{"qualifiedName":"github.com/org/repo/internal/auth.Middleware","kind":"function","score":0.9,"provenance":"lsp_resolved","distance":0},{"qualifiedName":"github.com/org/repo/internal/auth.ValidateToken","kind":"type","score":0.8,"provenance":"lsp_resolved","distance":0}],"edges":[]}`
+
+	// Call 1: registers symbols in session.
+	r1 := rw.RewriteToolResult(payload, nil)
+	if !r1.Converted {
+		t.Fatal("expected conversion on call 1")
+	}
+	if strings.Contains(r1.Rewritten, "previously transmitted") {
+		t.Error("call 1 should have no bare refs")
+	}
+
+	// Call 2: identical content. Without the fix, the output cache would return
+	// call 1's result (full symbols). With the fix, payloadCache re-encodes
+	// with current session state, producing bare refs.
+	r2 := rw.RewriteToolResult(payload, nil)
+	if !r2.Converted {
+		t.Fatal("expected conversion on call 2")
+	}
+
+	bareCount := strings.Count(r2.Rewritten, "previously transmitted")
+	if bareCount != 2 {
+		t.Errorf("call 2 (cache hit) should have 2 bare refs, got %d\noutput:\n%s", bareCount, r2.Rewritten)
+	}
+
+	// Call 2 should be smaller than call 1 (bare refs are shorter).
+	if len(r2.Rewritten) >= len(r1.Rewritten) {
+		t.Errorf("call 2 (%d bytes) should be smaller than call 1 (%d bytes)", len(r2.Rewritten), len(r1.Rewritten))
+	}
+
+	t.Logf("Call 1: %d bytes (full), Call 2: %d bytes (bare refs), savings: %.0f%%",
+		len(r1.Rewritten), len(r2.Rewritten),
+		100*(1-float64(len(r2.Rewritten))/float64(len(r1.Rewritten))))
+}
+
 func TestCache_StatsTrackHits(t *testing.T) {
 	stats := &Stats{}
 	rw := NewRewriter(RewriterConfig{StreamThreshold: 100, EnableCache: true, Stats: stats})

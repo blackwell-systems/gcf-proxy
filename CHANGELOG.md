@@ -1,5 +1,9 @@
 # Changelog
 
+## v0.10.1
+
+- **Fix: cache + session dedup interaction**: when `--cache` and `--session` were both active, the output cache returned stale responses with full symbols instead of bare refs. The proxy now caches decoded payloads and re-encodes with current session state on cache hit. Result: 42% smaller responses on repeat calls (bare refs) instead of serving the identical first-call output.
+
 ## v0.10.0
 
 - **Proxy-level delta encoding** (`--delta`): when a tool's response changes slightly between calls, the proxy computes and sends only the diff (added/removed symbols and edges). 68% savings on 20-symbol payloads with 10% change. The server sends full responses every time; the proxy handles the diffing transparently.

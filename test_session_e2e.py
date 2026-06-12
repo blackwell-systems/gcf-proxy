@@ -47,7 +47,91 @@ CALLS = [
     ("list_symbols", {"file_path": os.path.join(WORKSPACE, "src/constants.ts")}),
 ]
 
+def get_json_baselines():
+    """Run agent-lsp in JSON mode to get baseline JSON sizes for each call."""
+    env = os.environ.copy()
+    env["AGENT_LSP_OUTPUT_FORMAT"] = "json"
+    env["GOWORK"] = "off"
+
+    proc = subprocess.Popen(
+        ["agent-lsp"],
+        stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+        text=True, env=env,
+    )
+
+    def send(msg):
+        proc.stdin.write(msg + "\n")
+        proc.stdin.flush()
+
+    def recv_id(tid, timeout=60):
+        deadline = time.time() + timeout
+        while time.time() < deadline:
+            line = proc.stdout.readline().strip()
+            if not line:
+                continue
+            try:
+                msg = json.loads(line)
+                if msg.get("id") == tid:
+                    return msg
+            except json.JSONDecodeError:
+                pass
+        return None
+
+    # Initialize
+    send(json.dumps({"jsonrpc": "2.0", "id": 1, "method": "initialize", "params": {
+        "protocolVersion": "2025-03-26", "capabilities": {},
+        "clientInfo": {"name": "json-baseline", "version": "1.0"}
+    }}))
+    recv_id(1)
+    send(json.dumps({"jsonrpc": "2.0", "method": "notifications/initialized"}))
+    time.sleep(1)
+
+    start_args = {"root_dir": WORKSPACE, "ready_timeout_seconds": 30}
+    if "typescript" in WORKSPACE:
+        start_args["language_id"] = "typescript"
+    send(json.dumps({"jsonrpc": "2.0", "id": 2, "method": "tools/call",
+                      "params": {"name": "start_lsp", "arguments": start_args}}))
+    recv_id(2, timeout=60)
+    time.sleep(15)
+
+    baselines = {}
+    for i, (tool, args) in enumerate(CALLS):
+        call_id = i + 10
+        send(json.dumps({"jsonrpc": "2.0", "id": call_id, "method": "tools/call",
+                          "params": {"name": tool, "arguments": args}}))
+        resp = recv_id(call_id, timeout=30)
+        if resp and "result" in resp:
+            content = resp.get("result", {}).get("content", [])
+            text = ""
+            for block in content:
+                if isinstance(block, dict) and block.get("type") == "text":
+                    text += block.get("text", "")
+            baselines[i] = len(text)
+        else:
+            baselines[i] = 0
+
+    proc.stdin.close()
+    try:
+        proc.wait(timeout=5)
+    except:
+        proc.kill()
+
+    return baselines
+
 def run():
+    # Phase 0: get JSON baselines
+    print("=== Phase 0: JSON baselines (agent-lsp in JSON mode) ===")
+    json_baselines = get_json_baselines()
+    for i, size in json_baselines.items():
+        if "changed_files" in CALLS[i][1]:
+            label = ', '.join(f.split("/")[-1] for f in CALLS[i][1]["changed_files"])
+        elif "file_path" in CALLS[i][1]:
+            label = CALLS[i][1]["file_path"].split("/")[-1]
+        else:
+            label = "?"
+        print(f"  {CALLS[i][0]}({label}): {size:,} bytes JSON")
+    print()
+
     env = os.environ.copy()
     # Let agent-lsp produce GCF natively. The proxy's GCF-in path decodes
     # and re-encodes with session dedup (bare refs for known symbols).
@@ -55,7 +139,7 @@ def run():
     env["GOWORK"] = "off"  # Prevent broken parent go.work from poisoning gopls
 
     proc = subprocess.Popen(
-        [PROXY, "--session", "--cache", "--min-size", "100", "--verbose", "agent-lsp"],
+        [PROXY, "--session", "--min-size", "100", "--verbose", "agent-lsp"],
         stdin=subprocess.PIPE,
         stdout=subprocess.PIPE,
         stderr=subprocess.PIPE,
@@ -178,19 +262,24 @@ def run():
         proc.kill()
         stderr = proc.stderr.read()
 
-    # Print results
-    print(f"\n{'='*60}")
-    print(f"{'Call':<8} {'Bytes':>8} {'Bare refs':>10} {'vs Call 1':>12} {'GCF':>5}")
-    print(f"{'='*60}")
-    baseline = results[0][0] if results else 0
+    # Print results with JSON comparison
+    print(f"\n{'='*72}")
+    print(f"{'Call':<6} {'JSON':>10} {'GCF+dedup':>12} {'Bare refs':>10} {'vs JSON':>10}")
+    print(f"{'='*72}")
     for i, (size, bare, is_gcf) in enumerate(results):
-        if i == 0:
-            savings = "baseline"
-        elif baseline > 0:
-            savings = f"{100*(1-size/baseline):+.0f}%"
+        json_size = json_baselines.get(i, 0)
+        if json_size > 0:
+            vs_json = f"-{100*(1-size/json_size):.0f}%"
         else:
-            savings = "n/a"
-        print(f"  {i+1:<6} {size:>8} {bare:>10} {savings:>12} {'yes' if is_gcf else 'no':>5}")
+            vs_json = "n/a"
+        print(f"  {i+1:<4} {json_size:>10} {size:>12} {bare:>10} {vs_json:>10}")
+
+    # Totals
+    total_json = sum(json_baselines.get(i, 0) for i in range(len(results)))
+    total_gcf = sum(size for size, _, _ in results)
+    if total_json > 0:
+        print(f"  {'-'*68}")
+        print(f"  Total: {total_json:>7} JSON -> {total_gcf:>7} GCF+dedup = {100*(1-total_gcf/total_json):.0f}% fewer bytes")
 
     print(f"\n=== Proxy verbose output ===")
     cache_hits = 0
