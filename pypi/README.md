@@ -2,7 +2,7 @@
 
 Bidirectional MCP proxy that translates between [GCF](https://gcformat.com/) and JSON. Drop-in, zero code changes to your server or client.
 
-**79% fewer input tokens. 63% fewer output tokens. 90.7% comprehension accuracy across 10 models and 3 providers. 1,300+ LLM evaluations. Zero training.**
+**53-71% fewer input tokens. 63% fewer output tokens. 100% comprehension on every frontier model and 3 providers. 1,700+ LLM evaluations. Zero training.**
 
 Docs: [gcformat.com](https://gcformat.com/) · [Proxy Guide](https://gcformat.com/guide/proxy.html) · [Playground](https://gcformat.com/playground.html) · [GCF vs TOON](https://gcformat.com/guide/vs-toon.html)
 
