@@ -1,6 +1,7 @@
 {
   "name": "@blackwell-systems/gcf-proxy",
   "version": "0.10.1",
+  "mcpName": "io.github.blackwell-systems/gcf-proxy",
   "description": "Bidirectional MCP proxy that translates between JSON and GCF. 79% fewer input tokens, 63% fewer output tokens. Zero code changes.",
   "bin": {
     "gcf-proxy": "bin/gcf-proxy"
