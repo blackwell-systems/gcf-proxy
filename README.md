@@ -142,8 +142,10 @@ Reproduce token benchmark: `git clone https://github.com/blackwell-systems/toon 
 ## Links
 
 
+- [Claude Code Plugin](https://github.com/blackwell-systems/gcf-claude-plugin) - one-command install for Claude Code users
 - [GCF Specification](https://github.com/blackwell-systems/gcf)
 - [Documentation](https://gcformat.com/)
+- [Cost Calculator](https://gcformat.com/calculator)
 - [Go library](https://github.com/blackwell-systems/gcf-go)
 - [TypeScript library](https://github.com/blackwell-systems/gcf-typescript)
 - [Python library](https://github.com/blackwell-systems/gcf-python)
