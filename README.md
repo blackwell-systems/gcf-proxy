@@ -8,7 +8,7 @@
 
 **Bidirectional MCP proxy that translates between JSON and GCF. Drop-in, zero changes to your server or client.**
 
-79% fewer input tokens. 63% fewer output tokens. 90.7% comprehension accuracy where JSON averages 53.6% ([1,300+ evals, 10 models, 3 providers](https://gcformat.com/guide/benchmarks.html)). One line change in your MCP config.
+100% comprehension on every frontier model. 25.5% fewer tokens than TOON, 53% fewer than JSON ([1,700+ evals, 10+ models, 3 providers](https://gcformat.com/guide/benchmarks.html)). One line change in your MCP config.
 
 ## Install
 
@@ -98,7 +98,7 @@ After:  GCF profile=graph tool=context_for_task budget=5000 tokens=1900 symbols=
         ...
 ```
 
-79% fewer input tokens.
+53-71% fewer input tokens.
 
 ### Requests: LLM (GCF) -> Server (JSON)
 
@@ -127,11 +127,11 @@ If you control the server, use the [GCF libraries](https://github.com/blackwell-
 
 ## Benchmarks
 
-90.7% comprehension accuracy across 10 models where TOON averages 68.5% and JSON averages 53.6%. On TOON's own benchmark, GCF wins all 6 datasets.
+100% comprehension on standard workloads. 90.7% on code graphs (vs TOON 68.5%, JSON 53.6%). Wins 13/15 datasets on expanded token benchmark.
 
 | Format | Accuracy | Tokens | vs JSON |
 |--------|----------|--------|---------|
-| **GCF** | **90.7%** avg (10 models) | **11,090** | **79% fewer** |
+| **GCF** | **100%** (frontier models) | **11,090-24,000** | **53-71% fewer** |
 | TOON | 68.5% avg | 16,378 | 69% fewer |
 | JSON | 53.6% avg | 53,341 | baseline |
 
