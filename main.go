@@ -52,6 +52,7 @@ Flags:
   --min-size N           Skip encoding for responses smaller than N bytes (default: 100)
   --stream-threshold N   Min symbols before streaming mode activates (default: 5)
   --no-progress          Disable progress notifications
+  --stats-file <path>    Write JSON stats to file after each call (for hooks/plugins)
   --verbose              Log per-call savings to stderr
 
 Examples:
@@ -94,6 +95,7 @@ Version: %s
 	enableDelta := false
 	minSize := 100
 	httpAddr := ""
+	statsFile := ""
 	args := os.Args[1:]
 
 	for len(args) > 0 {
@@ -126,6 +128,9 @@ Version: %s
 				minSize = n
 			}
 			args = args[2:]
+		case args[0] == "--stats-file" && len(args) > 1:
+			statsFile = args[1]
+			args = args[2:]
 		case args[0] == "--http" && len(args) > 1:
 			httpAddr = args[1]
 			args = args[2:]
@@ -135,7 +140,7 @@ Version: %s
 	}
 done:
 
-	stats := &Stats{}
+	stats := &Stats{FilePath: statsFile}
 	config := RewriterConfig{
 		StreamThreshold: streamThreshold,
 		EnableProgress:  enableProgress,

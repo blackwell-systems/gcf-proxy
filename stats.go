@@ -1,8 +1,10 @@
 package main
 
 import (
+	"encoding/json"
 	"fmt"
 	"io"
+	"os"
 	"sync/atomic"
 )
 
@@ -14,7 +16,8 @@ type Stats struct {
 	Symbols      atomic.Int64
 	Edges        atomic.Int64
 	CacheHits    atomic.Int64
-	SessionDedup bool // whether session dedup is active
+	SessionDedup bool   // whether session dedup is active
+	FilePath     string // if set, write JSON stats to this file after each call
 }
 
 // Record adds a single conversion result to the running totals.
@@ -24,6 +27,7 @@ func (s *Stats) Record(jsonSize, gcfSize, symbols, edges int) {
 	s.GCFBytes.Add(int64(gcfSize))
 	s.Symbols.Add(int64(symbols))
 	s.Edges.Add(int64(edges))
+	s.WriteFile()
 }
 
 // SavedBytes returns the total bytes saved.
@@ -89,4 +93,34 @@ func fmtInt(n int64) string {
 		return fmt.Sprintf("%.1fK", float64(n)/1_000)
 	}
 	return fmt.Sprintf("%d", n)
+}
+
+// WriteFile writes JSON stats to the configured file path.
+// Called after each tool call rewrite so hooks can read live stats.
+func (s *Stats) WriteFile() {
+	if s.FilePath == "" {
+		return
+	}
+	calls := s.Calls.Load()
+	jsonB := s.JSONBytes.Load()
+	gcfB := s.GCFBytes.Load()
+	saved := s.SavedBytes()
+	pct := s.SavedPct()
+
+	data := map[string]interface{}{
+		"calls":            calls,
+		"json_bytes":       jsonB,
+		"gcf_bytes":        gcfB,
+		"bytes_saved":      saved,
+		"pct_saved":        pct,
+		"est_tokens_saved": estTokens(saved),
+		"cache_hits":       s.CacheHits.Load(),
+		"symbols":          s.Symbols.Load(),
+		"edges":            s.Edges.Load(),
+	}
+	b, err := json.Marshal(data)
+	if err != nil {
+		return
+	}
+	_ = os.WriteFile(s.FilePath, b, 0644)
 }

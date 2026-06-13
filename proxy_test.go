@@ -7,6 +7,7 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"os"
 	"strings"
 	"sync"
 	"testing"
@@ -1496,6 +1497,54 @@ func TestStats_SavedPctZero(t *testing.T) {
 	if stats.SavedPct() != 0 {
 		t.Errorf("expected 0%% for no data, got %.1f%%", stats.SavedPct())
 	}
+}
+
+func TestStats_WriteFile(t *testing.T) {
+	tmp := t.TempDir()
+	path := tmp + "/stats.json"
+	stats := &Stats{FilePath: path}
+	stats.Record(1000, 300, 10, 5)
+
+	data, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("expected stats file to exist: %v", err)
+	}
+
+	var m map[string]interface{}
+	if err := json.Unmarshal(data, &m); err != nil {
+		t.Fatalf("invalid JSON in stats file: %v", err)
+	}
+
+	if m["calls"].(float64) != 1 {
+		t.Errorf("expected 1 call, got %v", m["calls"])
+	}
+	if m["json_bytes"].(float64) != 1000 {
+		t.Errorf("expected 1000 json_bytes, got %v", m["json_bytes"])
+	}
+	if m["gcf_bytes"].(float64) != 300 {
+		t.Errorf("expected 300 gcf_bytes, got %v", m["gcf_bytes"])
+	}
+	if m["bytes_saved"].(float64) != 700 {
+		t.Errorf("expected 700 bytes_saved, got %v", m["bytes_saved"])
+	}
+	if m["pct_saved"].(float64) != 70 {
+		t.Errorf("expected 70 pct_saved, got %v", m["pct_saved"])
+	}
+
+	// Second record should update the file.
+	stats.Record(2000, 600, 20, 8)
+	data2, _ := os.ReadFile(path)
+	var m2 map[string]interface{}
+	json.Unmarshal(data2, &m2)
+	if m2["calls"].(float64) != 2 {
+		t.Errorf("expected 2 calls after second record, got %v", m2["calls"])
+	}
+}
+
+func TestStats_WriteFile_NoPath(t *testing.T) {
+	stats := &Stats{}
+	stats.Record(1000, 300, 10, 5)
+	// Should not panic or error when FilePath is empty.
 }
 
 func TestFmtBytes_Bytes(t *testing.T) {
