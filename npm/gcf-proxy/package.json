@@ -1,18 +1,18 @@
 {
   "name": "@blackwell-systems/gcf-proxy",
-  "version": "0.10.1",
+  "version": "0.10.2",
   "mcpName": "io.github.blackwell-systems/gcf-proxy",
   "description": "Bidirectional MCP proxy that translates between JSON and GCF. 79% fewer input tokens, 63% fewer output tokens. Zero code changes.",
   "bin": {
     "gcf-proxy": "bin/gcf-proxy"
   },
   "optionalDependencies": {
-    "@blackwell-systems/gcf-proxy-darwin-arm64": "0.10.1",
-    "@blackwell-systems/gcf-proxy-darwin-x64": "0.10.1",
-    "@blackwell-systems/gcf-proxy-linux-arm64": "0.10.1",
-    "@blackwell-systems/gcf-proxy-linux-x64": "0.10.1",
-    "@blackwell-systems/gcf-proxy-win32-x64": "0.10.1",
-    "@blackwell-systems/gcf-proxy-win32-arm64": "0.10.1"
+    "@blackwell-systems/gcf-proxy-darwin-arm64": "0.10.2",
+    "@blackwell-systems/gcf-proxy-darwin-x64": "0.10.2",
+    "@blackwell-systems/gcf-proxy-linux-arm64": "0.10.2",
+    "@blackwell-systems/gcf-proxy-linux-x64": "0.10.2",
+    "@blackwell-systems/gcf-proxy-win32-x64": "0.10.2",
+    "@blackwell-systems/gcf-proxy-win32-arm64": "0.10.2"
   },
   "keywords": ["gcf", "mcp", "proxy", "llm", "tokens", "json", "json-alternative", "wire-format", "toon-alternative", "ai", "agent"],
   "homepage": "https://gcformat.com/",
