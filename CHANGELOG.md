@@ -1,5 +1,13 @@
 # Changelog
 
+## v0.11.0 (2026-06-12)
+
+- **Upgrade to GCF v2.0.0**: generic profile output now uses inline schema format
+- Inline object schemas: nested objects with 3+ scalar fields encoded positionally
+- Shared array schemas: repeated nested arrays omit field headers after first row
+- No attachment indentation: smaller payloads
+- All proxy tests pass with new encoding
+
 ## v0.10.1
 
 - **Fix: cache + session dedup interaction**: when `--cache` and `--session` were both active, the output cache returned stale responses with full symbols instead of bare refs. The proxy now caches decoded payloads and re-encodes with current session state on cache hit. Result: 42% smaller responses on repeat calls (bare refs) instead of serving the identical first-call output.
