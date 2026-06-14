@@ -1,12 +1,12 @@
 <p align="center">
   <a href="https://gcformat.com/playground.html"><img src="https://img.shields.io/badge/playground-live-2563eb?style=for-the-badge" alt="Playground"></a>
-  <a href="https://gcformat.com/guide/benchmarks.html"><img src="https://img.shields.io/badge/benchmarks-1%2C300%2B%20evals-22c55e?style=for-the-badge" alt="Benchmarks"></a>
+  <a href="https://gcformat.com/guide/benchmarks.html"><img src="https://img.shields.io/badge/benchmarks-1%2C700%2B%20evals-22c55e?style=for-the-badge" alt="Benchmarks"></a>
   <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-333?style=for-the-badge" alt="License"></a>
 </p>
 
 # gcf-proxy
 
-**Bidirectional MCP proxy that translates between JSON and GCF. Drop-in, zero changes to your server or client.**
+**Bidirectional MCP proxy that translates between JSON and GCF. Drop-in, zero changes to your server or client. Works with any structured data format.**
 
 100% comprehension on every frontier model. 25.5% fewer tokens than TOON, 53% fewer than JSON ([1,700+ evals, 10+ models, 3 providers](https://gcformat.com/guide/benchmarks.html)). One line change in your MCP config.
 
