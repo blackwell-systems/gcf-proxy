@@ -95,7 +95,7 @@ Both modes are bidirectional: server responses are encoded to GCF, GCF in tool c
 | `--session` | Enable session dedup (bare refs for previously-transmitted symbols) |
 | `--cache` | Cache encoded responses for identical tool calls |
 | `--delta` | Send only changed symbols when a tool's response changes slightly |
-| `--no-flatten` | Disable nested object flattening (for open-weight models like LLaMA, Mistral) |
+| `--no-flatten` | Use expanded encoding for nested objects (open-weight models currently comprehend this form better; GCF still outperforms JSON either way) |
 | `--min-size N` | Skip encoding for responses smaller than N bytes (default: 100) |
 | `--stream-threshold N` | Min symbols before streaming mode activates (default: 5) |
 | `--stats-file PATH` | Write JSON stats to file after each call |
