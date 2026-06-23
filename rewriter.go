@@ -20,6 +20,7 @@ type RewriterConfig struct {
 	EnableCache     bool         // Cache encoded responses for identical tool calls
 	EnableDelta     bool         // Compute deltas against previous response for same tool
 	MinSize         int          // Skip encoding for responses smaller than this (bytes, 0 = no minimum)
+	NoFlatten       bool         // Disable nested object flattening (for open-weight models)
 }
 
 // ProgressFunc is called with partial GCF output and progress info.
@@ -202,7 +203,7 @@ func (r *Rewriter) RewriteToolResult(text string, progressFn ProgressFunc) Rewri
 	if err != nil {
 		return RewriteResult{Original: text}
 	}
-	encoded := gcf.EncodeGeneric(generic)
+	encoded := gcf.EncodeGeneric(generic, gcf.GenericOptions{NoFlatten: r.config.NoFlatten})
 	if encoded == "" {
 		return RewriteResult{Original: text}
 	}

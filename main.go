@@ -53,6 +53,7 @@ Flags:
   --stream-threshold N   Min symbols before streaming mode activates (default: 5)
   --no-progress          Disable progress notifications
   --stats-file <path>    Write JSON stats to file after each call (for hooks/plugins)
+  --no-flatten           Disable nested object flattening (for open-weight models)
   --verbose              Log per-call savings to stderr
 
 Examples:
@@ -93,6 +94,7 @@ Version: %s
 	enableSession := false
 	enableCache := false
 	enableDelta := false
+	noFlatten := false
 	minSize := 100
 	httpAddr := ""
 	statsFile := ""
@@ -123,6 +125,9 @@ Version: %s
 		case args[0] == "--delta":
 			enableDelta = true
 			args = args[1:]
+		case args[0] == "--no-flatten":
+			noFlatten = true
+			args = args[1:]
 		case args[0] == "--min-size" && len(args) > 1:
 			if n, err := strconv.Atoi(args[1]); err == nil {
 				minSize = n
@@ -149,6 +154,7 @@ done:
 		EnableCache:     enableCache,
 		EnableDelta:     enableDelta,
 		MinSize:         minSize,
+		NoFlatten:       noFlatten,
 	}
 	if enableSession {
 		config.Session = gcf.NewSession()
