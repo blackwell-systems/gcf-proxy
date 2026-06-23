@@ -2,7 +2,7 @@
 
 Bidirectional MCP proxy that translates between [GCF](https://gcformat.com/) and JSON. Drop-in, zero code changes to your server or client.
 
-**53-71% fewer input tokens. 63% fewer output tokens. 100% comprehension on every frontier model and 3 providers. 1,700+ LLM evaluations. Zero training.**
+**50-92% fewer tokens. 100% comprehension on every frontier model and 3 providers. 2,400+ LLM evaluations. Zero training.**
 
 Docs: [gcformat.com](https://gcformat.com/) · [Proxy Guide](https://gcformat.com/guide/proxy.html) · [Playground](https://gcformat.com/playground.html) · [GCF vs TOON](https://gcformat.com/guide/vs-toon.html)
 
@@ -31,7 +31,7 @@ Works with Claude Code, Claude Desktop, VS Code, Cursor, and any MCP client.
 Translates in both directions:
 
 ```
-Responses:  Your Server (JSON) -> gcf-proxy encodes -> LLM reads GCF   (79% input savings)
+Responses:  Your Server (JSON) -> gcf-proxy encodes -> LLM reads GCF   (50-92% savings)
 Requests:   LLM writes GCF    -> gcf-proxy decodes -> Your Server (JSON) (63% output savings)
 ```
 
@@ -44,9 +44,9 @@ Requests:   LLM writes GCF    -> gcf-proxy decodes -> Your Server (JSON) (63% ou
 
 | Format | Accuracy | Tokens | vs JSON |
 |--------|----------|--------|---------|
-| **GCF** | **90.7%** avg (10 models) | **11,090** | **79% fewer** |
-| TOON | 68.5% avg | 16,378 | 69% fewer |
-| JSON | 53.6% avg | 53,341 | baseline |
+| **GCF** | **91.2%** avg (10 models) | **11,090** | **50-92% fewer** |
+| TOON | 68.2% avg | 16,378 | 69% fewer |
+| JSON | 53.4% avg | 53,341 | baseline |
 
 ## Also available on
 

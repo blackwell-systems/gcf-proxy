@@ -8,7 +8,7 @@
 
 **Bidirectional MCP proxy that translates between JSON and GCF. Drop-in, zero changes to your server or client. Works with any structured data format.**
 
-100% comprehension on every frontier model. 25.5% fewer tokens than TOON, 53% fewer than JSON ([1,700+ evals, 10+ models, 3 providers](https://gcformat.com/guide/benchmarks.html)). One line change in your MCP config.
+100% comprehension on every frontier model. 29% fewer tokens than TOON, 56% fewer than JSON ([2,400+ evals, 11 models, 3 providers](https://gcformat.com/guide/benchmarks.html)). One line change in your MCP config.
 
 ## Install
 
@@ -127,13 +127,13 @@ If you control the server, use the [GCF libraries](https://github.com/blackwell-
 
 ## Benchmarks
 
-100% comprehension on standard workloads. 90.7% on code graphs (vs TOON 68.5%, JSON 53.6%). Wins 13/15 datasets on expanded token benchmark.
+100% comprehension on standard workloads. 91.2% on code graphs (vs TOON 68.2%, JSON 53.4%). Wins 13/15 datasets on expanded token benchmark.
 
 | Format | Accuracy | Tokens | vs JSON |
 |--------|----------|--------|---------|
 | **GCF** | **100%** (frontier models) | **11,090-24,000** | **53-71% fewer** |
-| TOON | 68.5% avg | 16,378 | 69% fewer |
-| JSON | 53.6% avg | 53,341 | baseline |
+| TOON | 68.2% avg | 16,378 | 69% fewer |
+| JSON | 53.4% avg | 53,341 | baseline |
 
 Reproduce comprehension eval: `git clone https://github.com/blackwell-systems/gcf-go && cd gcf-go/eval && GOWORK=off go test -run TestComprehension -v -timeout 0`
 
