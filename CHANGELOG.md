@@ -1,5 +1,9 @@
 # Changelog
 
+## v0.11.1 (2026-06-23)
+
+- Upgrade gcf-go to v1.3.1: flatten opt-out support, field names containing `>` fix
+
 ## v0.11.0 (2026-06-12)
 
 - **Upgrade to GCF v2.0.0**: generic profile output now uses inline schema format
