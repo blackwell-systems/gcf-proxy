@@ -5,7 +5,7 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "gcf-proxy"
 version = "0.10.1"
-description = "Bidirectional MCP proxy that translates between JSON and GCF. 79% fewer input tokens, 63% fewer output tokens. Zero code changes."
+description = "Bidirectional MCP proxy that translates between JSON and GCF. 50-92% fewer tokens. 100% comprehension on every frontier model. Zero code changes."
 readme = "README.md"
 license = "MIT"
 requires-python = ">=3.8"
