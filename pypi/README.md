@@ -39,6 +39,7 @@ Requests:   LLM writes GCF    -> gcf-proxy decodes -> Your Server (JSON) (63% ou
 - **Requests**: GCF strings in tool call arguments are decoded to JSON (4-byte prefix check, zero overhead)
 - Non-convertible content passes through unchanged in both directions
 - Neither the server nor the client needs to know about GCF
+- `--no-flatten` disables nested object flattening for open-weight models (LLaMA, Mistral)
 
 ## Savings
 
@@ -51,11 +52,11 @@ With session dedup (92.7% by 5th call) and delta encoding (81.2%), use the [GCF 
 
 ## Benchmarks
 
-| Format | Accuracy | Tokens | vs JSON |
-|--------|----------|--------|---------|
-| **GCF** | **91.2%** avg (10 models) | **11,090** | **50-92% fewer** |
-| TOON | 68.2% avg | 16,378 | 69% fewer |
-| JSON | 53.4% avg | 53,341 | baseline |
+| Eval | GCF | TOON | JSON |
+|------|-----|------|------|
+| **General comprehension** | **100%** | 100% | 100% |
+| **Adversarial code graphs** (500 symbols) | **90.7%** | 68.5% | 53.6% |
+| **Token efficiency** (16 datasets) | **15/16 wins** | 1/16 | baseline |
 
 ## Also available on
 

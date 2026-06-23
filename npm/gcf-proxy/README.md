@@ -39,6 +39,7 @@ Requests:   LLM writes GCF    -> gcf-proxy decodes -> Your Server (JSON) (63% ou
 - **Requests**: GCF strings in tool call arguments are decoded to JSON (4-byte prefix check, zero overhead)
 - Non-convertible content passes through unchanged in both directions
 - Neither the server nor the client needs to know about GCF
+- `--no-flatten` disables nested object flattening for open-weight models (LLaMA, Mistral)
 
 ## Benchmarks
 

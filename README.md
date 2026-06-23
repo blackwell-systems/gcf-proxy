@@ -8,7 +8,7 @@
 
 **Bidirectional MCP proxy that translates between JSON and GCF. Drop-in, zero changes to your server or client. Works with any structured data format.**
 
-100% comprehension on every frontier model. 29% fewer tokens than TOON, 56% fewer than JSON ([2,400+ evals, 11 models, 3 providers](https://gcformat.com/guide/benchmarks.html)). One line change in your MCP config.
+100% comprehension on every frontier model. 29% fewer tokens than TOON, 56% fewer than JSON ([2,400+ evals, 11 models, 3 providers](https://gcformat.com/guide/benchmarks.html)). Nested object flattening with opt-out for open-weight models. One line change in your MCP config.
 
 ## Install
 
@@ -88,6 +88,22 @@ Any MCP client that supports HTTP transport connects directly. Health check at `
 
 Both modes are bidirectional: server responses are encoded to GCF, GCF in tool call arguments is decoded to JSON. Neither side needs to change.
 
+### Flags
+
+| Flag | Description |
+|------|-------------|
+| `--session` | Enable session dedup (bare refs for previously-transmitted symbols) |
+| `--cache` | Cache encoded responses for identical tool calls |
+| `--delta` | Send only changed symbols when a tool's response changes slightly |
+| `--no-flatten` | Disable nested object flattening (for open-weight models like LLaMA, Mistral) |
+| `--min-size N` | Skip encoding for responses smaller than N bytes (default: 100) |
+| `--stream-threshold N` | Min symbols before streaming mode activates (default: 5) |
+| `--stats-file PATH` | Write JSON stats to file after each call |
+| `--upstream URL` | Connect to a remote MCP server over HTTP |
+| `--http ADDR` | Serve MCP over Streamable HTTP |
+| `--no-progress` | Disable progress notifications |
+| `--verbose` | Log per-call savings to stderr |
+
 ### Responses: Server (JSON) -> LLM (GCF)
 
 ```
@@ -127,13 +143,13 @@ If you control the server, use the [GCF libraries](https://github.com/blackwell-
 
 ## Benchmarks
 
-100% comprehension on standard workloads. 91.2% on code graphs (vs TOON 68.2%, JSON 53.4%). Wins 13/15 datasets on expanded token benchmark.
+100% general comprehension on every frontier model. 90.7% on adversarial code graphs (vs TOON 68.5%, JSON 53.6%). Wins 15/16 datasets on token benchmark.
 
-| Format | Accuracy | Tokens | vs JSON |
-|--------|----------|--------|---------|
-| **GCF** | **100%** (frontier models) | **11,090-24,000** | **53-71% fewer** |
-| TOON | 68.2% avg | 16,378 | 69% fewer |
-| JSON | 53.4% avg | 53,341 | baseline |
+| Eval | GCF | TOON | JSON |
+|------|-----|------|------|
+| **General comprehension** | **100%** | 100% | 100% |
+| **Adversarial code graphs** (500 symbols) | **90.7%** | 68.5% | 53.6% |
+| **Token efficiency** (16 datasets) | **15/16 wins** | 1/16 | baseline |
 
 Reproduce comprehension eval: `git clone https://github.com/blackwell-systems/gcf-go && cd gcf-go/eval && GOWORK=off go test -run TestComprehension -v -timeout 0`
 
