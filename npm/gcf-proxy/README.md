@@ -46,7 +46,7 @@ Requests:   LLM writes GCF    -> gcf-proxy decodes -> Your Server (JSON) (63% ou
 | Eval | GCF | TOON | JSON |
 |------|-----|------|------|
 | **General comprehension** | **100%** | 100% | 100% |
-| **Adversarial code graphs** (500 symbols) | **91.2%** | 68.2% | 53.4% |
+| **Adversarial code graphs** (500 symbols) | **91.6%** | 66.9% | 54.6% |
 | **Token efficiency** (16 datasets) | **15/16 wins** | 1/16 | baseline |
 
 ## Also available on

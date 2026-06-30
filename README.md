@@ -143,12 +143,12 @@ If you control the server, use the [GCF libraries](https://github.com/blackwell-
 
 ## Benchmarks
 
-100% general comprehension on every frontier model. 91.2% on adversarial code graphs (vs TOON 68.2%, JSON 53.4%). Wins 15/16 datasets on token benchmark.
+100% general comprehension on every frontier model. 91.6% on adversarial code graphs (vs TOON 66.9%, JSON 54.6%). Wins 15/16 datasets on token benchmark.
 
 | Eval | GCF | TOON | JSON |
 |------|-----|------|------|
 | **General comprehension** | **100%** | 100% | 100% |
-| **Adversarial code graphs** (500 symbols) | **91.2%** | 68.2% | 53.4% |
+| **Adversarial code graphs** (500 symbols) | **91.6%** | 66.9% | 54.6% |
 | **Token efficiency** (16 datasets) | **15/16 wins** | 1/16 | baseline |
 
 Reproduce comprehension eval: `git clone https://github.com/blackwell-systems/gcf-go && cd gcf-go/eval && GOWORK=off go test -run TestComprehension -v -timeout 0`
