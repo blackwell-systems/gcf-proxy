@@ -1,5 +1,9 @@
 # Changelog
 
+## v0.11.2 (2026-07-10)
+
+- Upgrade gcf-go to v1.3.2: nested-null flatten losslessness fix. A nested object that was null at an intermediate level (e.g. `{"meta":{"owner":null}}`) was flattened such that its `null` reached the model as an absent field rather than `null`; it now round-trips correctly (the field falls back to the attachment encoding). Encode-only proxy, so this is inherited entirely from the gcf-go dependency; no proxy code change.
+
 ## v0.11.1 (2026-06-23)
 
 - Upgrade gcf-go to v1.3.1: flatten opt-out support, field names containing `>` fix
