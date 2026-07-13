@@ -1,5 +1,9 @@
 # Changelog
 
+## v0.11.3 (2026-07-13)
+
+- Upgrade gcf-go to v1.5.0 (from v1.3.2). Inherited encoder fixes relevant to the proxy: graph edges are emitted in deterministic source-then-target order (SPEC 16.1); the `--session` path now uses stable session-global IDs and omits zero-valued header fields; the `--delta` path emits the mandatory `profile=graph` discriminator and the trailing `distance` field on `## added` lines (SPEC 3.4.1); and the streaming graph trailer is deterministic, with an opt-in labeled `counts` form (SPEC 8.4.1). The library also gains generic-profile delta (SPEC 10a) and graph delta decode/verify. Encode-only proxy, so these are inherited from the dependency; no proxy code change. Build and tests pass unchanged.
+
 ## v0.11.2 (2026-07-10)
 
 - Upgrade gcf-go to v1.3.2: nested-null flatten losslessness fix. A nested object that was null at an intermediate level (e.g. `{"meta":{"owner":null}}`) was flattened such that its `null` reached the model as an absent field rather than `null`; it now round-trips correctly (the field falls back to the attachment encoding). Encode-only proxy, so this is inherited entirely from the gcf-go dependency; no proxy code change.
