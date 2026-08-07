@@ -1,8 +1,12 @@
 # Changelog
 
-## v0.11.3 (2026-08-07)
+## v0.11.4 (2026-08-07)
 
-- Upgrade gcf-go to v1.6.0 (from v1.3.2). Inherited encoder capabilities and fixes relevant to the proxy: keyed-tabular map encoding (SPEC 7.2a); negative zero canonicalized to `0` (SPEC 2.3.1); the buffered graph header omits zero-valued `budget`/`tokens`/`edges` and orders symbols by distance then score; graph edges emit in deterministic source-then-target order (SPEC 16.1); the `--session` path uses stable session-global IDs; the `--delta` path emits the `profile=graph` discriminator and the trailing `distance` field on `## added` lines (SPEC 3.4.1); and the streaming graph trailer is deterministic with an opt-in labeled `counts` form (SPEC 8.4.1). The library also carries generic-profile delta (SPEC 10a) and graph delta decode/verify. Encode-only proxy, so these are inherited from the dependency; no proxy code change. Build and tests pass unchanged. Built against GCF spec v3.5.0.
+- Upgrade gcf-go to v1.6.0 (from v1.5.0). Inherited from GCF spec v3.5.0: keyed-tabular map encoding (SPEC 7.2a); negative zero canonicalized to `0` (SPEC 2.3.1); the buffered graph header omits zero-valued `budget`/`tokens`/`edges` and orders symbols by distance then score (SPEC 3.2, 16.1). Encode-only proxy, so these are inherited from the dependency; no proxy code change. Build and tests pass unchanged.
+
+## v0.11.3 (2026-07-13)
+
+- Upgrade gcf-go to v1.5.0 (from v1.3.2). Inherited encoder fixes relevant to the proxy: graph edges are emitted in deterministic source-then-target order (SPEC 16.1); the `--session` path now uses stable session-global IDs and omits zero-valued header fields; the `--delta` path emits the mandatory `profile=graph` discriminator and the trailing `distance` field on `## added` lines (SPEC 3.4.1); and the streaming graph trailer is deterministic, with an opt-in labeled `counts` form (SPEC 8.4.1). The library also gains generic-profile delta (SPEC 10a) and graph delta decode/verify. Encode-only proxy, so these are inherited from the dependency; no proxy code change. Build and tests pass unchanged.
 
 ## v0.11.2 (2026-07-10)
 
