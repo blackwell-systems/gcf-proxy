@@ -1,5 +1,9 @@
 # Changelog
 
+## v0.11.5 (2026-08-15)
+
+- Upgrade gcf-go to v1.7.1 (from v1.6.0). Inherited from the dependency: the int64 numeric domain (SPEC 2.3.2), score round-half-to-even (SPEC 5), count validation (SPEC 13), and the decode quoted-key/array-value round-trip fix (SPEC 4.2). Encode-only proxy, so only the encode-side changes are exercised; no proxy code change. Build and tests pass unchanged.
+
 ## v0.11.4 (2026-08-07)
 
 - Upgrade gcf-go to v1.6.0 (from v1.5.0). Inherited from GCF spec v3.5.0: keyed-tabular map encoding (SPEC 7.2a); negative zero canonicalized to `0` (SPEC 2.3.1); the buffered graph header omits zero-valued `budget`/`tokens`/`edges` and orders symbols by distance then score (SPEC 3.2, 16.1). Encode-only proxy, so these are inherited from the dependency; no proxy code change. Build and tests pass unchanged.
