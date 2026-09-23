@@ -7,7 +7,7 @@ name = "gcf-proxy"
 version = "0.10.1"
 description = "Bidirectional MCP proxy that translates between JSON and GCF. 50-92% fewer tokens. 100% comprehension on every frontier model. Zero code changes."
 readme = "README.md"
-license = "MIT"
+license = "Apache-2.0"
 requires-python = ">=3.8"
 keywords = ["gcf", "mcp", "proxy", "llm", "tokens", "json", "wire-format", "graph-compact-format", "toon-alternative", "agent", "ai"]
 classifiers = [
